@@ -2,58 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/src/utils/supabase'
-// TODO: 연결 확인 후 제거
-import SupabaseConnectionTest from '@/src/components/common/SupabaseConnectionTest'
+import type { MetricsMap, ServerMetric } from '@/src/types/infrastructure'
+import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 
-// ─── 타입 ─────────────────────────────────────────────────────────────────────
-type ServerMetric = {
-  server_id:    string
-  status:       string
-  cpu_usage:    number
-  memory_usage: number
-  disk_io:      number
-}
-
-// server_id 를 키로 각 서버의 최신 메트릭 1건만 보유
-type MetricsMap = Record<string, ServerMetric>
-
-// ─── 파생 값 계산 헬퍼 ────────────────────────────────────────────────────────
-function deriveStats(metrics: MetricsMap) {
-  const all     = Object.values(metrics)
-  const online  = all.filter(m => m.status === 'ONLINE')
-  const offline = all.filter(m => m.status === 'OFFLINE')
-
-  const serverCount = all.length === 0 ? '—' : String(online.length)
-
-  const avgCpu =
-    online.length === 0
-      ? '—'
-      : (online.reduce((s, m) => s + m.cpu_usage, 0) / online.length).toFixed(1)
-
-  const maxCpu = online.length > 0 ? Math.max(...online.map(m => m.cpu_usage)) : 0
-  const risk =
-    all.length === 0        ? { label: '—',   color: 'text-slate-400' }
-    : offline.length > 0   ? { label: '위험', color: 'text-red-400'   }
-    : maxCpu >= 90         ? { label: '위험', color: 'text-red-400'   }
-    : maxCpu >= 70         ? { label: '경고', color: 'text-amber-400' }
-    :                        { label: '정상', color: 'text-emerald-400' }
-
-  const alertCount = offline.length + online.filter(m => m.cpu_usage >= 90).length
-
-  return { serverCount, avgCpu, risk, alertCount, onlineCount: online.length }
-}
-
-// ─── 시스템 상태 헤더 문구 ────────────────────────────────────────────────────
-function systemStatusLabel(risk: { label: string }) {
-  if (risk.label === '위험') return { text: '시스템 상태: 위험',  dot: 'text-red-400'    }
-  if (risk.label === '경고') return { text: '시스템 상태: 경고',  dot: 'text-amber-400'  }
-  if (risk.label === '정상') return { text: '시스템 상태: 정상',  dot: 'text-emerald-400'}
-  return                             { text: '시스템 상태: 대기중', dot: 'text-slate-400' }
-}
-
-// ─── 페이지 컴포넌트 ──────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [metrics, setMetrics]       = useState<MetricsMap>({})
+  const [metrics, setMetrics]         = useState<MetricsMap>({})
   const [lastUpdated, setLastUpdated] = useState<string>('—')
 
   // ─── Supabase Realtime 구독 ─────────────────────────────────────────────
@@ -120,26 +73,23 @@ export default function DashboardPage() {
             {sysStatus.text}
           </span>
         </div>
-        <div className="flex items-center gap-4">
-          <SupabaseConnectionTest />
-          <div className="flex items-center gap-6 text-xs text-slate-400">
-            <span>
-              모니터링 서버{' '}
-              <strong className="text-slate-200 font-semibold">
-                {serverCount === '—' ? '—' : `${serverCount} 대`}
-              </strong>
-            </span>
-            <span>
-              마지막 갱신{' '}
-              <strong className="text-slate-200 font-semibold">{lastUpdated}</strong>
-            </span>
-            <span>
-              활성 알림{' '}
-              <strong className={`font-semibold ${alertCount > 0 ? 'text-red-400' : 'text-slate-200'}`}>
-                {alertCount} 건
-              </strong>
-            </span>
-          </div>
+        <div className="flex items-center gap-6 text-xs text-slate-400">
+          <span>
+            모니터링 서버{' '}
+            <strong className="text-slate-200 font-semibold">
+              {serverCount === '—' ? '—' : `${serverCount} 대`}
+            </strong>
+          </span>
+          <span>
+            마지막 갱신{' '}
+            <strong className="text-slate-200 font-semibold">{lastUpdated}</strong>
+          </span>
+          <span>
+            활성 알림{' '}
+            <strong className={`font-semibold ${alertCount > 0 ? 'text-red-400' : 'text-slate-200'}`}>
+              {alertCount} 건
+            </strong>
+          </span>
         </div>
       </header>
 
