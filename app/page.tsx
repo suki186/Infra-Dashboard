@@ -1,39 +1,123 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/src/utils/supabase'
 // TODO: 연결 확인 후 제거
 import SupabaseConnectionTest from '@/src/components/common/SupabaseConnectionTest'
 
-const summaryCards = [
-  {
-    title: '배포된 서버 수',
-    value: '—',
-    unit: '대',
-    sub: '모니터링 중',
-    color: 'text-blue-400',
-  },
-  {
-    title: '평균 CPU',
-    value: '—',
-    unit: '%',
-    sub: '전체 평균',
-    color: 'text-emerald-400',
-  },
-  {
-    title: '시스템 위험도',
-    value: '—',
-    unit: '',
-    sub: '현재 상태',
-    color: 'text-amber-400',
-  },
-]
+// ─── 타입 ─────────────────────────────────────────────────────────────────────
+type ServerMetric = {
+  server_id:    string
+  status:       string
+  cpu_usage:    number
+  memory_usage: number
+  disk_io:      number
+}
 
+// server_id 를 키로 각 서버의 최신 메트릭 1건만 보유
+type MetricsMap = Record<string, ServerMetric>
+
+// ─── 파생 값 계산 헬퍼 ────────────────────────────────────────────────────────
+function deriveStats(metrics: MetricsMap) {
+  const all     = Object.values(metrics)
+  const online  = all.filter(m => m.status === 'ONLINE')
+  const offline = all.filter(m => m.status === 'OFFLINE')
+
+  const serverCount = all.length === 0 ? '—' : String(online.length)
+
+  const avgCpu =
+    online.length === 0
+      ? '—'
+      : (online.reduce((s, m) => s + m.cpu_usage, 0) / online.length).toFixed(1)
+
+  const maxCpu = online.length > 0 ? Math.max(...online.map(m => m.cpu_usage)) : 0
+  const risk =
+    all.length === 0        ? { label: '—',   color: 'text-slate-400' }
+    : offline.length > 0   ? { label: '위험', color: 'text-red-400'   }
+    : maxCpu >= 90         ? { label: '위험', color: 'text-red-400'   }
+    : maxCpu >= 70         ? { label: '경고', color: 'text-amber-400' }
+    :                        { label: '정상', color: 'text-emerald-400' }
+
+  const alertCount = offline.length + online.filter(m => m.cpu_usage >= 90).length
+
+  return { serverCount, avgCpu, risk, alertCount, onlineCount: online.length }
+}
+
+// ─── 시스템 상태 헤더 문구 ────────────────────────────────────────────────────
+function systemStatusLabel(risk: { label: string }) {
+  if (risk.label === '위험') return { text: '시스템 상태: 위험',  dot: 'text-red-400'    }
+  if (risk.label === '경고') return { text: '시스템 상태: 경고',  dot: 'text-amber-400'  }
+  if (risk.label === '정상') return { text: '시스템 상태: 정상',  dot: 'text-emerald-400'}
+  return                             { text: '시스템 상태: 대기중', dot: 'text-slate-400' }
+}
+
+// ─── 페이지 컴포넌트 ──────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const [metrics, setMetrics]       = useState<MetricsMap>({})
+  const [lastUpdated, setLastUpdated] = useState<string>('—')
+
+  // ─── Supabase Realtime 구독 ─────────────────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('infrastructure_metrics_feed')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'infrastructure_metrics' },
+        (payload) => {
+          const row = payload.new as ServerMetric
+          console.log('📥 수신된 메트릭:', row)
+
+          setMetrics(prev => ({ ...prev, [row.server_id]: row }))
+          setLastUpdated(new Date().toLocaleTimeString('ko-KR'))
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('📡 Supabase 실시간 채널 연결 성공!')
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  // ─── 파생 상태 ───────────────────────────────────────────────────────────
+  const { serverCount, avgCpu, risk, alertCount, onlineCount } = deriveStats(metrics)
+  const sysStatus = systemStatusLabel(risk)
+
+  const summaryCards = [
+    {
+      title: '배포된 서버 수',
+      value: serverCount,
+      unit:  serverCount === '—' ? '' : '대',
+      sub:   `온라인 ${onlineCount}대 모니터링 중`,
+      color: 'text-blue-400',
+    },
+    {
+      title: '평균 CPU',
+      value: avgCpu,
+      unit:  avgCpu === '—' ? '' : '%',
+      sub:   '전체 온라인 서버 평균',
+      color: 'text-emerald-400',
+    },
+    {
+      title: '시스템 위험도',
+      value: risk.label,
+      unit:  '',
+      sub:   `알림 ${alertCount}건 발생 중`,
+      color: risk.color,
+    },
+  ]
+
   return (
     <div className="flex flex-col flex-1 p-6 gap-6">
       {/* 상단 헤더 */}
       <header className="flex items-center justify-between px-5 py-3 rounded-xl bg-slate-800 border border-slate-700">
         <div className="flex items-center gap-3">
-          <span className="text-emerald-400 text-lg leading-none">●</span>
+          <span className={`text-lg leading-none ${sysStatus.dot}`}>●</span>
           <span className="text-sm font-semibold text-slate-100">
-            시스템 상태: 정상
+            {sysStatus.text}
           </span>
         </div>
         <div className="flex items-center gap-4">
@@ -41,15 +125,19 @@ export default function DashboardPage() {
           <div className="flex items-center gap-6 text-xs text-slate-400">
             <span>
               모니터링 서버{' '}
-              <strong className="text-slate-200 font-semibold">— 대</strong>
+              <strong className="text-slate-200 font-semibold">
+                {serverCount === '—' ? '—' : `${serverCount} 대`}
+              </strong>
             </span>
             <span>
               마지막 갱신{' '}
-              <strong className="text-slate-200 font-semibold">—</strong>
+              <strong className="text-slate-200 font-semibold">{lastUpdated}</strong>
             </span>
             <span>
               활성 알림{' '}
-              <strong className="text-slate-200 font-semibold">0 건</strong>
+              <strong className={`font-semibold ${alertCount > 0 ? 'text-red-400' : 'text-slate-200'}`}>
+                {alertCount} 건
+              </strong>
             </span>
           </div>
         </div>
