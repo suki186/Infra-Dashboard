@@ -202,10 +202,12 @@ function printMetrics(metrics) {
   console.log(`${C.cyan}└${BORDER}┘${C.reset}`)
 }
 
-// ─── 장애 주입 스케줄 ─────────────────────────────────────────────────────────
-//  T+20s : kr-seoul-web-01  → STRESS (CPU 폭주)
-//  T+40s : kr-jeju-ai-01   → OFFLINE
-//  T+60s : 전체 복구 (Recovery)
+// ─── 전송 주기 ────────────────────────────────────────────────────────────────
+const INTERVAL_MS = 30  // 과부하 모드: 초당 약 33회 전송
+
+// ─── 장애 주입 스케줄 (시간축 압축: 원래 1000ms 기준 타임라인 × 30/1000) ────
+//  원본 : T+20s / T+40s / T+60s  (1000ms 인터벌 기준)
+//  압축 : T+600ms / T+1200ms / T+1800ms  (30ms 인터벌 기준, 33.3× 가속)
 
 const web01  = SERVERS.find(s => s.id === 'kr-seoul-web-01')
 const jeju01 = SERVERS.find(s => s.id === 'kr-jeju-ai-01')
@@ -213,34 +215,43 @@ const jeju01 = SERVERS.find(s => s.id === 'kr-jeju-ai-01')
 setTimeout(() => {
   web01.isStressed = true
   printAlert('stress', '⚠️  [STRESS INJECTED]  kr-seoul-web-01  CPU 폭주 시작! (isStressed → true)')
-}, 20_000)
+}, 600)
 
 setTimeout(() => {
   jeju01.isOffline = true
   jeju01.status    = 'OFFLINE'
   printAlert('down', '🚨 [SERVER DOWN]  kr-jeju-ai-01  OFFLINE 상태 돌입! 모든 메트릭 → 0')
-}, 40_000)
+}, 1_200)
 
 setTimeout(() => {
   web01.isStressed  = false
   jeju01.isOffline  = false
   jeju01.status     = 'ONLINE'
   printAlert('recovery', '✅ [RECOVERY]  전체 장애 해제 — 삼각함수 파동으로 정상 복구 완료')
-}, 60_000)
+}, 1_800)
 
 // ─── 메인 루프 ────────────────────────────────────────────────────────────────
-console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 시뮬레이터 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
-console.log(`${C.dim}  T+20s  kr-seoul-web-01  STRESS 주입`)
-console.log(`  T+40s  kr-jeju-ai-01   OFFLINE 전환`)
-console.log(`  T+60s  전체 RECOVERY${C.reset}\n`)
+console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 스트레스 테스트 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
+console.log(`${C.dim}  Interval : ${INTERVAL_MS}ms  (~${Math.round(1000 / INTERVAL_MS)}회/초)`)
+console.log(`  T+600ms  kr-seoul-web-01  STRESS 주입`)
+console.log(`  T+1.2s   kr-jeju-ai-01   OFFLINE 전환`)
+console.log(`  T+1.8s   전체 RECOVERY${C.reset}\n`)
+
+let txCount = 0
 
 setInterval(async () => {
   const now     = Date.now()
   const metrics = SERVERS.map(s => generateMetrics(s, now))
 
-  printMetrics(metrics)
+  // 터미널 과부하 방지: 전체 테이블 대신 한 줄 상태 라인만 덮어씀
+  txCount++
+  process.stdout.write(
+    `\r${C.bold}${C.cyan}🚀 [STRESS TEST]${C.reset} 메트릭 전송 중...` +
+    `  Interval: ${INTERVAL_MS}ms` +
+    `  tx: ${C.white}${String(txCount).padStart(6)}${C.reset}`
+  )
 
-  // ─── Supabase insert (recorded_at 제외 — DB의 created_at이 자동 기록) ────
+  // ─── Supabase insert ──────────────────────────────────────────────────────
   const rows = metrics.map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
     server_id, status, cpu_usage, memory_usage, disk_io,
   }))
@@ -250,9 +261,10 @@ setInterval(async () => {
     .insert(rows)
 
   if (error) {
+    process.stdout.write('\n')
     console.log(
-      `\n${C.bold}${C.red}❌ [DB INSERT ERROR] 데이터 저장 실패!${C.reset}` +
-      `\n${C.red}   ${error.message}${C.reset}\n`
+      `${C.bold}${C.red}❌ [DB INSERT ERROR] 데이터 저장 실패!${C.reset}` +
+      `\n${C.red}   ${error.message}${C.reset}`
     )
   }
-}, 1000)
+}, INTERVAL_MS)
