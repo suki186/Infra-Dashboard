@@ -1,3 +1,6 @@
+// TODO: 연결 확인 후 제거
+import SupabaseConnectionTest from '@/src/components/common/SupabaseConnectionTest'
+
 const summaryCards = [
   {
     title: '배포된 서버 수',
@@ -33,19 +36,22 @@ export default function DashboardPage() {
             시스템 상태: 정상
           </span>
         </div>
-        <div className="flex items-center gap-6 text-xs text-slate-400">
-          <span>
-            모니터링 서버{' '}
-            <strong className="text-slate-200 font-semibold">— 대</strong>
-          </span>
-          <span>
-            마지막 갱신{' '}
-            <strong className="text-slate-200 font-semibold">—</strong>
-          </span>
-          <span>
-            활성 알림{' '}
-            <strong className="text-slate-200 font-semibold">0 건</strong>
-          </span>
+        <div className="flex items-center gap-4">
+          <SupabaseConnectionTest />
+          <div className="flex items-center gap-6 text-xs text-slate-400">
+            <span>
+              모니터링 서버{' '}
+              <strong className="text-slate-200 font-semibold">— 대</strong>
+            </span>
+            <span>
+              마지막 갱신{' '}
+              <strong className="text-slate-200 font-semibold">—</strong>
+            </span>
+            <span>
+              활성 알림{' '}
+              <strong className="text-slate-200 font-semibold">0 건</strong>
+            </span>
+          </div>
         </div>
       </header>
 
