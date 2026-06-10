@@ -1,6 +1,17 @@
 import dotenv from 'dotenv'
+import { createClient } from '@supabase/supabase-js'
 
 dotenv.config({ path: '.env.local' })
+
+// ─── Supabase 클라이언트 초기화 ───────────────────────────────────────────────
+const { NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: SUPABASE_KEY } = process.env
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('❌ .env.local 에서 Supabase 환경 변수를 읽지 못했습니다.')
+  process.exit(1)
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ─── 가상 서버 정의 ───────────────────────────────────────────────────────────
 const SERVERS = [
@@ -46,12 +57,12 @@ function generateMetrics(server, nowMs) {
   // OFFLINE 서버: 모든 수치 0
   if (server.isOffline) {
     return {
-      server_id:   server.id,
-      status:      'OFFLINE',
-      cpu:         0,
-      memory:      0,
-      disk_io:     0,
-      recorded_at: new Date(nowMs).toISOString(),
+      server_id:     server.id,
+      status:        'OFFLINE',
+      cpu_usage:     0,
+      memory_usage:  0,
+      disk_io:       0,
+      recorded_at:   new Date(nowMs).toISOString(),
     }
   }
 
@@ -97,12 +108,12 @@ function generateMetrics(server, nowMs) {
   }
 
   return {
-    server_id:   server.id,
-    status:      server.status,
-    cpu:         parseFloat(cpu.toFixed(1)),
-    memory:      parseFloat(memory.toFixed(1)),
-    disk_io:     parseFloat(disk_io.toFixed(1)),
-    recorded_at: new Date(nowMs).toISOString(),
+    server_id:    server.id,
+    status:       server.status,
+    cpu_usage:    parseFloat(cpu.toFixed(1)),
+    memory_usage: parseFloat(memory.toFixed(1)),
+    disk_io:      parseFloat(disk_io.toFixed(1)),
+    recorded_at:  new Date(nowMs).toISOString(),
   }
 }
 
@@ -166,8 +177,8 @@ function printMetrics(metrics) {
   for (const m of metrics) {
     const server = SERVERS.find(s => s.id === m.server_id)
     const sid    = m.server_id.padEnd(22)
-    const cpu    = String(m.cpu).padStart(5)
-    const mem    = String(m.memory).padStart(5)
+    const cpu    = String(m.cpu_usage).padStart(5)
+    const mem    = String(m.memory_usage).padStart(5)
     const disk   = String(m.disk_io).padStart(5)
 
     let dot, rowPrefix = ''
@@ -182,8 +193,8 @@ function printMetrics(metrics) {
 
     console.log(
       `${C.cyan}│${C.reset} ${dot} ${rowPrefix}${C.white}${sid}${C.reset}` +
-      `  CPU ${bar(m.cpu)} ${colorByLevel(m.cpu)}${cpu}%${C.reset}` +
-      `  MEM ${bar(m.memory)} ${colorByLevel(m.memory)}${mem}%${C.reset}` +
+      `  CPU ${bar(m.cpu_usage)} ${colorByLevel(m.cpu_usage)}${cpu}%${C.reset}` +
+      `  MEM ${bar(m.memory_usage)} ${colorByLevel(m.memory_usage)}${mem}%${C.reset}` +
       `  DISK ${bar(m.disk_io)} ${colorByLevel(m.disk_io)}${disk}%${C.reset}`
     )
   }
@@ -223,7 +234,25 @@ console.log(`${C.dim}  T+20s  kr-seoul-web-01  STRESS 주입`)
 console.log(`  T+40s  kr-jeju-ai-01   OFFLINE 전환`)
 console.log(`  T+60s  전체 RECOVERY${C.reset}\n`)
 
-setInterval(() => {
-  const metrics = SERVERS.map(s => generateMetrics(s, Date.now()))
+setInterval(async () => {
+  const now     = Date.now()
+  const metrics = SERVERS.map(s => generateMetrics(s, now))
+
   printMetrics(metrics)
+
+  // ─── Supabase insert (recorded_at 제외 — DB의 created_at이 자동 기록) ────
+  const rows = metrics.map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
+    server_id, status, cpu_usage, memory_usage, disk_io,
+  }))
+
+  const { error } = await supabase
+    .from('infrastructure_metrics')
+    .insert(rows)
+
+  if (error) {
+    console.log(
+      `\n${C.bold}${C.red}❌ [DB INSERT ERROR] 데이터 저장 실패!${C.reset}` +
+      `\n${C.red}   ${error.message}${C.reset}\n`
+    )
+  }
 }, 1000)
