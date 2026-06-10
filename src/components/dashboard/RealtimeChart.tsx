@@ -14,20 +14,13 @@ import {
 import { Line } from 'react-chartjs-2'
 import type { ChartData, ChartOptions } from 'chart.js'
 import { supabase } from '@/src/utils/supabase'
-import type { ServerMetric } from '@/src/types/infrastructure'
+import type { ServerMetric } from '@/src/config/infrastructure'
+import { SERVER_STYLES, SERVER_IDS } from '@/src/config/infrastructure'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const MAX_POINTS = 30
-
-const SERVER_STYLES: Record<string, { label: string; color: string }> = {
-  'kr-seoul-web-01': { label: 'Seoul Web', color: 'rgb(96, 165, 250)'  },  // blue-400
-  'kr-seoul-db-01':  { label: 'Seoul DB',  color: 'rgb(251, 146, 60)'  },  // orange-400
-  'kr-jeju-ai-01':   { label: 'Jeju AI',   color: 'rgb(52, 211, 153)'  },  // emerald-400
-}
-
-const SERVER_IDS = Object.keys(SERVER_STYLES)
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 // 1초 단위 시간 슬롯: 동일 초에 도착한 3대 서버 데이터를 한 슬롯에 묶음
@@ -90,9 +83,6 @@ const chartOptions: ChartOptions<'line'> = {
 }
 
 // ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
-// latestMetric prop 제거 → 컴포넌트가 Supabase를 직접 구독
-// 이유: page.tsx에서 prop으로 전달하면 배치 insert 시 React 18 자동 배칭이
-//       3개 이벤트를 하나의 렌더로 합쳐 중간 서버(db-01)가 누락됨
 export default function RealtimeChart() {
   const [history, setHistory] = useState<TimeSlot[]>([])
 

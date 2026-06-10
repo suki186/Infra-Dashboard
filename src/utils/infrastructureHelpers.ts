@@ -1,4 +1,4 @@
-import type { MetricsMap } from '@/src/types/infrastructure'
+import type { MetricsMap } from '@/src/config/infrastructure'
 
 export function deriveStats(metrics: MetricsMap) {
   const all    = Object.values(metrics)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/src/utils/supabase'
-import type { MetricsMap, ServerMetric } from '@/src/types/infrastructure'
+import type { MetricsMap, ServerMetric } from '@/src/config/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
 
