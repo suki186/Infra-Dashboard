@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/src/utils/supabase'
 import type { MetricsMap, ServerMetric } from '@/src/types/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
+import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
 
 export default function DashboardPage() {
   const [metrics, setMetrics]         = useState<MetricsMap>({})
@@ -120,14 +121,11 @@ export default function DashboardPage() {
       <section className="flex gap-4 flex-1 min-h-0">
         {/* 차트 영역 */}
         <div className="flex flex-col gap-3 flex-[7] rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">
-              실시간 인프라 메트릭 스트리밍
-            </h2>
-            <span className="text-xs text-slate-500">Chart.js 연동 예정</span>
-          </div>
-          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-64">
-            <p className="text-slate-600 text-sm">차트 영역</p>
+          <h2 className="text-sm font-semibold text-slate-100 shrink-0">
+            실시간 인프라 메트릭 스트리밍
+          </h2>
+          <div className="flex-1 min-h-0">
+            <RealtimeChart />
           </div>
         </div>
 
