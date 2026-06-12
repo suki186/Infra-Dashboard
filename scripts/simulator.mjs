@@ -202,89 +202,64 @@ function printMetrics(metrics) {
   console.log(`${C.cyan}└${BORDER}┘${C.reset}`)
 }
 
-// ─── 주기 상수 ────────────────────────────────────────────────────────────────
-const INTERVAL_MS = 30   // 데이터 생성 밀도: 초당 ~33회
-const BULK_MS     = 300  // 네트워크 발송 주기: 초당 ~3회 (10 세트 묶음)
+// ─── 전송 주기 ────────────────────────────────────────────────────────────────
+const INTERVAL_MS = 1000  // 프로덕션 스펙: 1초마다 생성 + 즉시 insert
 
-// ─── 글로벌 임시 버퍼 ────────────────────────────────────────────────────────
-// 30ms 루프에서 생성된 rows를 메모리에만 쌓아두고,
-// 300ms 루프가 한꺼번에 꺼내 벌크 insert 한다.
-let localBuffer = []
-
-// ─── 장애 주입 스케줄 (시간축 압축: 원래 1000ms 기준 타임라인 × 30/1000) ────
-//  원본 : T+20s / T+40s / T+60s  (1000ms 인터벌 기준)
-//  압축 : T+600ms / T+1200ms / T+1800ms  (30ms 인터벌 기준, 33.3× 가속)
-
+// ─── 장애 주입 스케줄 ─────────────────────────────────────────────────────────
 const web01  = SERVERS.find(s => s.id === 'kr-seoul-web-01')
 const jeju01 = SERVERS.find(s => s.id === 'kr-jeju-ai-01')
 
 setTimeout(() => {
   web01.isStressed = true
   printAlert('stress', '⚠️  [STRESS INJECTED]  kr-seoul-web-01  CPU 폭주 시작! (isStressed → true)')
-}, 600)
+}, 20_000)
 
 setTimeout(() => {
   jeju01.isOffline = true
   jeju01.status    = 'OFFLINE'
   printAlert('down', '🚨 [SERVER DOWN]  kr-jeju-ai-01  OFFLINE 상태 돌입! 모든 메트릭 → 0')
-}, 1_200)
+}, 40_000)
 
 setTimeout(() => {
-  web01.isStressed  = false
-  jeju01.isOffline  = false
-  jeju01.status     = 'ONLINE'
+  web01.isStressed = false
+  jeju01.isOffline = false
+  jeju01.status    = 'ONLINE'
   printAlert('recovery', '✅ [RECOVERY]  전체 장애 해제 — 삼각함수 파동으로 정상 복구 완료')
-}, 1_800)
+}, 60_000)
 
 // ─── 기동 메시지 ──────────────────────────────────────────────────────────────
-console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 벌크 스트리밍 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
-console.log(`${C.dim}  생성 주기 : ${INTERVAL_MS}ms  (~${Math.round(1000 / INTERVAL_MS)}회/초)`)
-console.log(`  발송 주기 : ${BULK_MS}ms   (${BULK_MS / INTERVAL_MS}개 세트 × ${SERVERS.length}대 = ${BULK_MS / INTERVAL_MS * SERVERS.length}rows 묶음 insert)`)
-console.log(`  T+600ms  kr-seoul-web-01  STRESS 주입`)
-console.log(`  T+1.2s   kr-jeju-ai-01   OFFLINE 전환`)
-console.log(`  T+1.8s   전체 RECOVERY${C.reset}\n`)
+console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 시뮬레이터 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
+console.log(`${C.dim}  전송 주기 : ${INTERVAL_MS}ms · 서버 ${SERVERS.length}대 · ${SERVERS.length}rows/회`)
+console.log(`  T+20s   kr-seoul-web-01  STRESS 주입`)
+console.log(`  T+40s   kr-jeju-ai-01   OFFLINE 전환`)
+console.log(`  T+60s   전체 RECOVERY${C.reset}\n`)
 
-let genCount  = 0  // 30ms 틱 카운터
-let bulkCount = 0  // 300ms 벌크 전송 카운터
+let txCount = 0
 
-// ─── 데이터 생성 루프 (30ms) ──────────────────────────────────────────────────
-// DB 요청 없음 — 생성한 rows를 localBuffer에만 push한다.
-setInterval(() => {
+// ─── 메인 루프 (1초) ──────────────────────────────────────────────────────────
+setInterval(async () => {
   const now  = Date.now()
   const rows = SERVERS.map(s => generateMetrics(s, now))
     .map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
       server_id, status, cpu_usage, memory_usage, disk_io,
     }))
 
-  localBuffer.push(...rows)
-  genCount++
-
+  txCount++
   process.stdout.write(
-    `\r${C.bold}${C.cyan}🚀 [BULK STREAM]${C.reset}` +
-    `  gen: ${C.white}${String(genCount).padStart(6)}${C.reset}` +
-    `  bulk: ${C.white}${String(bulkCount).padStart(5)}${C.reset}` +
-    `  buf: ${C.dim}${String(localBuffer.length).padStart(4)} rows${C.reset}`
+    `\r${C.bold}${C.cyan}🚀 [SIMULATOR]${C.reset}` +
+    `  tx: ${C.white}${String(txCount).padStart(6)}${C.reset}` +
+    `  interval: ${C.dim}${INTERVAL_MS}ms${C.reset}`
   )
-}, INTERVAL_MS)
-
-// ─── 네트워크 발송 루프 (300ms) ───────────────────────────────────────────────
-// splice(0): 버퍼 전체를 원자적으로 꺼내고 즉시 빈 배열로 리셋 — 누락 없음.
-// 단 1회의 insert() 호출로 묶어서 Supabase 커넥션 풀 부하를 1/10로 압축한다.
-setInterval(async () => {
-  const pendingRows = localBuffer.splice(0)
-  if (pendingRows.length === 0) return
-
-  bulkCount++
 
   const { error } = await supabase
     .from('infrastructure_metrics')
-    .insert(pendingRows)
+    .insert(rows)
 
   if (error) {
     process.stdout.write('\n')
     console.log(
-      `${C.bold}${C.red}❌ [BULK INSERT ERROR] 벌크 전송 실패!${C.reset}` +
+      `${C.bold}${C.red}❌ [INSERT ERROR]${C.reset}` +
       `\n${C.red}   ${error.message}${C.reset}`
     )
   }
-}, BULK_MS)
+}, INTERVAL_MS)
