@@ -202,8 +202,14 @@ function printMetrics(metrics) {
   console.log(`${C.cyan}└${BORDER}┘${C.reset}`)
 }
 
-// ─── 전송 주기 ────────────────────────────────────────────────────────────────
-const INTERVAL_MS = 30  // 과부하 모드: 초당 약 33회 전송
+// ─── 주기 상수 ────────────────────────────────────────────────────────────────
+const INTERVAL_MS = 30   // 데이터 생성 밀도: 초당 ~33회
+const BULK_MS     = 300  // 네트워크 발송 주기: 초당 ~3회 (10 세트 묶음)
+
+// ─── 글로벌 임시 버퍼 ────────────────────────────────────────────────────────
+// 30ms 루프에서 생성된 rows를 메모리에만 쌓아두고,
+// 300ms 루프가 한꺼번에 꺼내 벌크 insert 한다.
+let localBuffer = []
 
 // ─── 장애 주입 스케줄 (시간축 압축: 원래 1000ms 기준 타임라인 × 30/1000) ────
 //  원본 : T+20s / T+40s / T+60s  (1000ms 인터벌 기준)
@@ -230,41 +236,55 @@ setTimeout(() => {
   printAlert('recovery', '✅ [RECOVERY]  전체 장애 해제 — 삼각함수 파동으로 정상 복구 완료')
 }, 1_800)
 
-// ─── 메인 루프 ────────────────────────────────────────────────────────────────
-console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 스트레스 테스트 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
-console.log(`${C.dim}  Interval : ${INTERVAL_MS}ms  (~${Math.round(1000 / INTERVAL_MS)}회/초)`)
+// ─── 기동 메시지 ──────────────────────────────────────────────────────────────
+console.log(`\n${C.bold}${C.cyan}🚀 PulseOps 벌크 스트리밍 시작${C.reset}  ${C.dim}(Ctrl+C 로 종료)${C.reset}`)
+console.log(`${C.dim}  생성 주기 : ${INTERVAL_MS}ms  (~${Math.round(1000 / INTERVAL_MS)}회/초)`)
+console.log(`  발송 주기 : ${BULK_MS}ms   (${BULK_MS / INTERVAL_MS}개 세트 × ${SERVERS.length}대 = ${BULK_MS / INTERVAL_MS * SERVERS.length}rows 묶음 insert)`)
 console.log(`  T+600ms  kr-seoul-web-01  STRESS 주입`)
 console.log(`  T+1.2s   kr-jeju-ai-01   OFFLINE 전환`)
 console.log(`  T+1.8s   전체 RECOVERY${C.reset}\n`)
 
-let txCount = 0
+let genCount  = 0  // 30ms 틱 카운터
+let bulkCount = 0  // 300ms 벌크 전송 카운터
 
-setInterval(async () => {
-  const now     = Date.now()
-  const metrics = SERVERS.map(s => generateMetrics(s, now))
+// ─── 데이터 생성 루프 (30ms) ──────────────────────────────────────────────────
+// DB 요청 없음 — 생성한 rows를 localBuffer에만 push한다.
+setInterval(() => {
+  const now  = Date.now()
+  const rows = SERVERS.map(s => generateMetrics(s, now))
+    .map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
+      server_id, status, cpu_usage, memory_usage, disk_io,
+    }))
 
-  // 터미널 과부하 방지: 전체 테이블 대신 한 줄 상태 라인만 덮어씀
-  txCount++
+  localBuffer.push(...rows)
+  genCount++
+
   process.stdout.write(
-    `\r${C.bold}${C.cyan}🚀 [STRESS TEST]${C.reset} 메트릭 전송 중...` +
-    `  Interval: ${INTERVAL_MS}ms` +
-    `  tx: ${C.white}${String(txCount).padStart(6)}${C.reset}`
+    `\r${C.bold}${C.cyan}🚀 [BULK STREAM]${C.reset}` +
+    `  gen: ${C.white}${String(genCount).padStart(6)}${C.reset}` +
+    `  bulk: ${C.white}${String(bulkCount).padStart(5)}${C.reset}` +
+    `  buf: ${C.dim}${String(localBuffer.length).padStart(4)} rows${C.reset}`
   )
+}, INTERVAL_MS)
 
-  // ─── Supabase insert ──────────────────────────────────────────────────────
-  const rows = metrics.map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
-    server_id, status, cpu_usage, memory_usage, disk_io,
-  }))
+// ─── 네트워크 발송 루프 (300ms) ───────────────────────────────────────────────
+// splice(0): 버퍼 전체를 원자적으로 꺼내고 즉시 빈 배열로 리셋 — 누락 없음.
+// 단 1회의 insert() 호출로 묶어서 Supabase 커넥션 풀 부하를 1/10로 압축한다.
+setInterval(async () => {
+  const pendingRows = localBuffer.splice(0)
+  if (pendingRows.length === 0) return
+
+  bulkCount++
 
   const { error } = await supabase
     .from('infrastructure_metrics')
-    .insert(rows)
+    .insert(pendingRows)
 
   if (error) {
     process.stdout.write('\n')
     console.log(
-      `${C.bold}${C.red}❌ [DB INSERT ERROR] 데이터 저장 실패!${C.reset}` +
+      `${C.bold}${C.red}❌ [BULK INSERT ERROR] 벌크 전송 실패!${C.reset}` +
       `\n${C.red}   ${error.message}${C.reset}`
     )
   }
-}, INTERVAL_MS)
+}, BULK_MS)
