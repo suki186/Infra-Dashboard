@@ -1,10 +1,65 @@
 'use client'
 
+import ReactMarkdown from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
+import remarkGfm from 'remark-gfm'
 import type { MetricsMap } from '@/src/config/infrastructure'
 import { usePulseDoctor } from './usePulseDoctor'
 
 type Props = { metrics: MetricsMap }
 
+// ─── 어시스턴트 말풍선 내 마크다운 렌더러 ──────────────────────────────────────
+// rehype-raw : <details>/<summary> 등 HTML 태그 그대로 렌더링
+// remark-gfm : 코드 블록·볼드·리스트 등 GFM 파싱
+// components : Tailwind 클래스로 요소별 다크 테마 스타일 오버라이드
+function AssistantMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeRaw]}
+      components={{
+        p:      ({ children }) => (
+          <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>
+        ),
+        strong: ({ children }) => (
+          <strong className="font-semibold text-slate-100">{children}</strong>
+        ),
+        a:      ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer"
+             className="text-blue-400 underline decoration-blue-400/40 hover:text-blue-300 transition-colors">
+            {children}
+          </a>
+        ),
+        ul: ({ children }) => (
+          <ul className="ml-4 mt-1 mb-1.5 space-y-0.5 list-disc list-outside">{children}</ul>
+        ),
+        ol: ({ children }) => (
+          <ol className="ml-4 mt-1 mb-1.5 space-y-0.5 list-decimal list-outside">{children}</ol>
+        ),
+        li: ({ children }) => (
+          <li className="text-slate-300 leading-relaxed">{children}</li>
+        ),
+        // 코드 블록 컨테이너
+        pre: ({ children }) => (
+          <pre className="mt-2 mb-1 overflow-x-auto rounded-lg bg-slate-950/80 border border-slate-700/50 px-3 py-2 text-[10.5px] leading-relaxed text-slate-300 font-mono">
+            {children}
+          </pre>
+        ),
+        // 인라인 코드 vs 블록 코드 구분: className='language-*' 유무로 판별
+        code: ({ className, children, ...rest }) => {
+          const isBlock = Boolean(className)
+          return isBlock
+            ? <code className={`font-mono ${className ?? ''}`} {...rest}>{children}</code>
+            : <code className="rounded bg-slate-900/70 px-1 py-0.5 text-[10.5px] text-blue-300 font-mono border border-slate-700/40">{children}</code>
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
+
+// ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
 export default function PulseDoctor({ metrics }: Props) {
   const {
     messages,
@@ -26,8 +81,8 @@ export default function PulseDoctor({ metrics }: Props) {
         <h2 className="text-sm font-semibold text-slate-100">Pulse Doctor</h2>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">
           <span className={`w-1.5 h-1.5 rounded-full
-            ${!hasData  ? 'bg-slate-600'   : 'animate-pulse'}
-            ${!hasData  ? ''               : isTyping ? 'bg-yellow-400' : 'bg-emerald-500'}
+            ${!hasData ? 'bg-slate-600'   : 'animate-pulse'}
+            ${!hasData ? ''               : isTyping ? 'bg-yellow-400' : 'bg-emerald-500'}
           `} />
           {!hasData ? '연결 대기' : isTyping ? '분석 중' : '대기 중'}
         </span>
@@ -36,11 +91,9 @@ export default function PulseDoctor({ metrics }: Props) {
       {/* 메시지 영역 */}
       <div
         ref={scrollRef}
-        className="flex flex-col gap-3 flex-1 overflow-y-auto min-h-36 lg:min-h-0 py-1 pr-0.5
-                   scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent"
+        className="flex flex-col gap-3 flex-1 overflow-y-auto min-h-36 lg:min-h-0 py-1 pr-0.5"
       >
         {!hasData ? (
-          // ── 연결 대기 — 데이터 미수신 시 스켈레톤·애니메이션 없음 ──────────
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center select-none">
             <span className="text-2xl opacity-30">📡</span>
             <p className="text-xs text-slate-500 leading-relaxed px-3">
@@ -49,7 +102,6 @@ export default function PulseDoctor({ metrics }: Props) {
             </p>
           </div>
         ) : (
-          // ── 채팅 로그 — 환영 메시지 포함, 이후 대화가 누적됨 ─────────────
           <>
             {messages.map(msg => (
               <div
@@ -61,19 +113,22 @@ export default function PulseDoctor({ metrics }: Props) {
                     🤖
                   </div>
                 )}
-                <div className={`
-                  max-w-[82%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words
-                  ${msg.role === 'user'
-                    ? 'bg-blue-600/25 border border-blue-500/30 text-slate-200 rounded-tr-sm'
-                    : 'bg-slate-700 border border-slate-600/60 text-slate-200 rounded-tl-sm'
-                  }
-                `}>
-                  {msg.content}
-                </div>
+                {msg.role === 'user' ? (
+                  // 유저 말풍선 — 일반 텍스트
+                  <div className="max-w-[82%] rounded-xl rounded-tr-sm px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words bg-blue-600/25 border border-blue-500/30 text-slate-200">
+                    {msg.content}
+                  </div>
+                ) : (
+                  // 어시스턴트 말풍선 — 마크다운 렌더링
+                  // pd-msg 클래스 : globals.css의 <details>/<summary> 스타일 트리거
+                  <div className="pd-msg max-w-[92%] rounded-xl rounded-tl-sm px-3 py-2.5 text-xs text-slate-200 bg-slate-700 border border-slate-600/60 break-words overflow-hidden">
+                    <AssistantMarkdown content={msg.content} />
+                  </div>
+                )}
               </div>
             ))}
 
-            {/* 타이핑 인디케이터 — isTyping 구간에만 표시 */}
+            {/* 타이핑 인디케이터 */}
             {isTyping && (
               <div className="flex gap-2 items-center">
                 <div className="w-6 h-6 rounded-full bg-slate-600 border border-slate-500 shrink-0 flex items-center justify-center text-[10px]">
@@ -113,7 +168,6 @@ export default function PulseDoctor({ metrics }: Props) {
                      disabled:bg-slate-700 disabled:cursor-not-allowed
                      transition-colors flex items-center justify-center shrink-0"
         >
-          {/* 전송 아이콘 */}
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
           </svg>

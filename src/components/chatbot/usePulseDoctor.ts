@@ -1,10 +1,10 @@
 // ─── usePulseDoctor — Pulse Doctor 챗봇 비즈니스 로직 훅 ──────────────────────
-// PulseDoctor.tsx 는 이 훅이 반환하는 인터페이스만 소비하며,
-// 모든 상태·이펙트·핸들러는 이 파일 안에서만 존재한다.
+// PulseDoctor.tsx 는 이 훅이 반환하는 인터페이스만 소비한다.
+// 모든 상태·이펙트·API 통신은 이 파일 안에서만 존재한다.
 //
 // 성능 격리 원칙:
 //   page.tsx 의 1초 metrics 갱신이 PulseDoctor 를 re-render 시켜도,
-//   RealtimeChart(memo)는 props 가 없어 절대 깨어나지 않는다.
+//   RealtimeChart(memo) 는 props 가 없어 절대 깨어나지 않는다.
 //   챗봇 상태 변화는 이 컴포넌트 트리 안에서만 전파된다.
 
 import { useEffect, useRef, useState } from 'react'
@@ -29,41 +29,6 @@ export type UsePulseDoctorReturn = {
   handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void
 }
 
-// ─── 모의 AI 응답 생성기 ──────────────────────────────────────────────────────
-// 전송 시점의 metrics 스냅샷을 받아 진단 문자열을 생성한다.
-// 실제 LLM API 연결 시 이 함수를 async API 호출로 교체하면 된다.
-function buildMockResponse(metrics: MetricsMap): string {
-  const entries = Object.entries(metrics)
-
-  if (entries.length === 0) {
-    return '현재 수신된 서버 데이터가 없습니다.\n\n시뮬레이터를 먼저 실행해 주세요.\n`node scripts/simulator.mjs`'
-  }
-
-  const danger = entries.filter(([, m]) => m.cpu_usage >= 90)
-  const warn   = entries.filter(([, m]) => m.cpu_usage >= 70 && m.cpu_usage < 90)
-
-  if (danger.length > 0) {
-    const lines = danger
-      .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-      .join('\n')
-    return `현재 실시간 메트릭 분석 결과,\n\n${lines}\n\n위 서버의 CPU가 수치상 위험 수준입니다. 즉각적인 부하 분산 및 점검이 권고됩니다.`
-  }
-
-  if (warn.length > 0) {
-    const lines = warn
-      .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-      .join('\n')
-    return `경계 수준 서버가 감지되었습니다.\n\n${lines}\n\n현재 수준에서 트래픽 분산 검토를 권장합니다.`
-  }
-
-  const avgCpu = (entries.reduce((s, [, m]) => s + m.cpu_usage, 0) / entries.length).toFixed(1)
-  const avgMem = (entries.reduce((s, [, m]) => s + m.memory_usage, 0) / entries.length).toFixed(1)
-  const lines  = entries
-    .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-    .join('\n')
-  return `${entries.length}대 서버 모두 정상 운영 중입니다.\n\n${lines}\n\n전체 평균  CPU ${avgCpu}%  /  MEM ${avgMem}%`
-}
-
 // ─── 훅 ───────────────────────────────────────────────────────────────────────
 export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
   const [messages,   setMessages]   = useState<Message[]>([])
@@ -82,7 +47,8 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
   }, [messages, isTyping])
 
   // metrics 첫 수신 시 환영 메시지 1회 주입
-  // hasData 가 false→true 로 전환되는 시점에만 실행되며, 이후 1초 갱신으로는 재실행되지 않는다
+  // hasData 가 false → true 로 전환되는 시점에만 실행되며,
+  // 이후 1초 갱신으로는 welcomeShownRef 가드에 의해 재실행되지 않는다
   useEffect(() => {
     if (!hasData || welcomeShownRef.current) return
     welcomeShownRef.current = true
@@ -93,7 +59,8 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
     }])
   }, [hasData]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleSend() {
+  // ─── 전송 핸들러 (OpenAI /api/chat 연동) ─────────────────────────────────
+  async function sendMessage() {
     const text = inputValue.trim()
     if (!text || isTyping) return
 
@@ -101,14 +68,36 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
     setInputValue('')
     setIsTyping(true)
 
-    // 전송 시점의 metrics 스냅샷으로 응답 생성 (클로저 캡처 — 지연 후에도 send 시점 값 유지)
-    const response = buildMockResponse(metrics)
+    try {
+      const res = await fetch('/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ message: text, metrics }),
+      })
 
-    setTimeout(() => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: { content?: string; error?: string } = await res.json()
+      if (data.error) throw new Error(data.error)
+
+      setMessages(prev => [...prev, {
+        id:      crypto.randomUUID(),
+        role:    'assistant',
+        content: data.content ?? '응답을 받지 못했습니다.',
+      }])
+    } catch (err) {
+      console.error('[usePulseDoctor]', err)
+      setMessages(prev => [...prev, {
+        id:      crypto.randomUUID(),
+        role:    'assistant',
+        content: '⚠️ AI 응답을 가져오는 중 오류가 발생했습니다.\n잠시 후 다시 시도해 주세요.',
+      }])
+    } finally {
       setIsTyping(false)
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: response }])
-    }, 1_500)
+    }
   }
+
+  // 외부 인터페이스는 동기 함수로 노출 — Promise 는 내부에서 소화
+  function handleSend() { void sendMessage() }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
