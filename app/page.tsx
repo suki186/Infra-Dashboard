@@ -1,15 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/src/utils/supabase'
 import type { MetricsMap, ServerMetric } from '@/src/config/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
+import { LogTerminal, type LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
 import PulseDoctor from '@/src/components/chatbot/PulseDoctor'
 
 export default function DashboardPage() {
   const [metrics, setMetrics]         = useState<MetricsMap>({})
   const [lastUpdated, setLastUpdated] = useState<string>('—')
+
+  // logTerminalRef : RefObject이므로 state 가 아님 → metrics 갱신이 PulseDoctor 를 깨워도
+  //                  이 ref 를 타고 로그를 읽는 것은 추가 re-render 없이 수행된다.
+  const logTerminalRef = useRef<LogTerminalHandle>(null)
 
   // ─── Supabase Realtime 구독 ─────────────────────────────────────────────
   useEffect(() => {
@@ -128,10 +133,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* metrics: Supabase Realtime 1초 주기로 갱신되는 최신 서버 스냅샷을 브릿지 */}
-        <PulseDoctor metrics={metrics} />
+        {/* logTerminalRef: RefObject 전달 — state 가 아니므로 PulseDoctor re-render 없음 */}
+        <PulseDoctor metrics={metrics} logTerminalRef={logTerminalRef} />
 
       </section>
+
+      {/* 로그 터미널 — shrink-0 고정 높이, 자체 Supabase 구독으로 완전 격리 */}
+      <LogTerminal ref={logTerminalRef} />
+
     </div>
   )
 }

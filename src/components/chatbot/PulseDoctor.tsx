@@ -1,17 +1,19 @@
 'use client'
 
+import type { RefObject } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import type { MetricsMap } from '@/src/config/infrastructure'
+import type { LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
 import { usePulseDoctor } from './usePulseDoctor'
 
-type Props = { metrics: MetricsMap }
+type Props = {
+  metrics:         MetricsMap
+  logTerminalRef?: RefObject<LogTerminalHandle | null>
+}
 
 // ─── 어시스턴트 말풍선 내 마크다운 렌더러 ──────────────────────────────────────
-// rehype-raw : <details>/<summary> 등 HTML 태그 그대로 렌더링
-// remark-gfm : 코드 블록·볼드·리스트 등 GFM 파싱
-// components : Tailwind 클래스로 요소별 다크 테마 스타일 오버라이드
 function AssistantMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
@@ -39,13 +41,11 @@ function AssistantMarkdown({ content }: { content: string }) {
         li: ({ children }) => (
           <li className="text-slate-300 leading-relaxed">{children}</li>
         ),
-        // 코드 블록 컨테이너
         pre: ({ children }) => (
           <pre className="mt-2 mb-1 overflow-x-auto rounded-lg bg-slate-950/80 border border-slate-700/50 px-3 py-2 text-[10.5px] leading-relaxed text-slate-300 font-mono">
             {children}
           </pre>
         ),
-        // 인라인 코드 vs 블록 코드 구분: className='language-*' 유무로 판별
         code: ({ className, children, ...rest }) => {
           const isBlock = Boolean(className)
           return isBlock
@@ -60,7 +60,7 @@ function AssistantMarkdown({ content }: { content: string }) {
 }
 
 // ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
-export default function PulseDoctor({ metrics }: Props) {
+export default function PulseDoctor({ metrics, logTerminalRef }: Props) {
   const {
     messages,
     inputValue,
@@ -70,7 +70,7 @@ export default function PulseDoctor({ metrics }: Props) {
     scrollRef,
     handleSend,
     handleKeyDown,
-  } = usePulseDoctor(metrics)
+  } = usePulseDoctor(metrics, logTerminalRef)
 
   return (
     <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-4 md:p-5">
@@ -114,13 +114,10 @@ export default function PulseDoctor({ metrics }: Props) {
                   </div>
                 )}
                 {msg.role === 'user' ? (
-                  // 유저 말풍선 — 일반 텍스트
                   <div className="max-w-[82%] rounded-xl rounded-tr-sm px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words bg-blue-600/25 border border-blue-500/30 text-slate-200">
                     {msg.content}
                   </div>
                 ) : (
-                  // 어시스턴트 말풍선 — 마크다운 렌더링
-                  // pd-msg 클래스 : globals.css의 <details>/<summary> 스타일 트리거
                   <div className="pd-msg max-w-[92%] rounded-xl rounded-tl-sm px-3 py-2.5 text-xs text-slate-200 bg-slate-700 border border-slate-600/60 break-words overflow-hidden">
                     <AssistantMarkdown content={msg.content} />
                   </div>
@@ -128,7 +125,6 @@ export default function PulseDoctor({ metrics }: Props) {
               </div>
             ))}
 
-            {/* 타이핑 인디케이터 */}
             {isTyping && (
               <div className="flex gap-2 items-center">
                 <div className="w-6 h-6 rounded-full bg-slate-600 border border-slate-500 shrink-0 flex items-center justify-center text-[10px]">

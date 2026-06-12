@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { MetricsMap } from '@/src/config/infrastructure'
+import type { LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
 import { sendChatQuestionApi } from '@/src/services/aiApi'
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
@@ -31,12 +32,14 @@ export type UsePulseDoctorReturn = {
 }
 
 // ─── 훅 ───────────────────────────────────────────────────────────────────────
-export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
+export function usePulseDoctor(
+  metrics:         MetricsMap,
+  logTerminalRef?: RefObject<LogTerminalHandle | null>,
+): UsePulseDoctorReturn {
   const [messages,   setMessages]   = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isTyping,   setIsTyping]   = useState(false)
 
-  // metrics 수신 여부 — false 일 때 챗봇 전체가 비활성 상태로 전환된다
   const hasData = Object.keys(metrics).length > 0
 
   const scrollRef       = useRef<HTMLDivElement>(null)
@@ -48,8 +51,6 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
   }, [messages, isTyping])
 
   // metrics 첫 수신 시 환영 메시지 1회 주입
-  // hasData 가 false → true 로 전환되는 시점에만 실행되며,
-  // 이후 1초 갱신으로는 welcomeShownRef 가드에 의해 재실행되지 않는다
   useEffect(() => {
     if (!hasData || welcomeShownRef.current) return
     welcomeShownRef.current = true
@@ -69,8 +70,11 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
     setInputValue('')
     setIsTyping(true)
 
+    // 전송 시점에 로그 터미널의 최근 10줄을 스냅샷 — ref 읽기이므로 re-render 없음
+    const recentLogs = logTerminalRef?.current?.getRecentLogs(10) ?? []
+
     try {
-      const content = await sendChatQuestionApi(text, metrics)
+      const content = await sendChatQuestionApi(text, metrics, recentLogs)
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content }])
     } catch (err) {
       console.error('[usePulseDoctor]', err)
