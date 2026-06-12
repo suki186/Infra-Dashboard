@@ -128,7 +128,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <PulseDoctor />
+        {/* metrics: Supabase Realtime 1초 주기로 갱신되는 최신 서버 스냅샷을 브릿지 */}
+        <PulseDoctor metrics={metrics} />
 
       </section>
     </div>
