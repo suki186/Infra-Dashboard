@@ -1,116 +1,21 @@
 'use client'
 
-// ─── PulseDoctor — AI 인프라 진단 챗봇 ──────────────────────────────────────
-// 이 컴포넌트는 page.tsx의 Supabase 구독 상태(metrics)를 Props로 받아
-// 독립적인 채팅 UI를 운용한다.
-//
-// 성능 격리 원칙:
-//   - 차트 파이프라인(setInterval 300ms 직접 드로잉)과 완전히 분리된 자체 상태를 가진다.
-//   - 채팅 입력·말풍선 렌더링은 이 컴포넌트 트리 안에서만 일어나며,
-//     page.tsx의 1초 metrics 갱신이 이 컴포넌트를 re-render해도
-//     차트 컴포넌트(memo)는 절대 깨어나지 않는다.
-
-import { useEffect, useRef, useState } from 'react'
 import type { MetricsMap } from '@/src/config/infrastructure'
+import { usePulseDoctor } from './usePulseDoctor'
 
-// ─── 타입 ─────────────────────────────────────────────────────────────────────
-type Message = {
-  id:      string
-  role:    'user' | 'assistant'
-  content: string
-}
+type Props = { metrics: MetricsMap }
 
-type Props = {
-  // page.tsx가 Supabase Realtime으로 상시 갱신하는 최신 서버 메트릭 스냅샷
-  metrics: MetricsMap
-}
-
-// ─── 모의 AI 응답 생성기 ──────────────────────────────────────────────────────
-// 전송 버튼 클릭 시점의 metrics 스냅샷을 캡처하여 진단 문자열을 생성한다.
-// 실제 LLM API 연결 시 이 함수를 API 호출로 교체하면 된다.
-function buildMockResponse(metrics: MetricsMap): string {
-  const entries = Object.entries(metrics)
-
-  if (entries.length === 0) {
-    return '현재 수신된 서버 데이터가 없습니다.\n\n시뮬레이터를 먼저 실행해 주세요.\n`node scripts/simulator.mjs`'
-  }
-
-  const danger = entries.filter(([, m]) => m.cpu_usage >= 90)
-  const warn   = entries.filter(([, m]) => m.cpu_usage >= 70 && m.cpu_usage < 90)
-
-  if (danger.length > 0) {
-    const lines = danger
-      .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-      .join('\n')
-    return `현재 실시간 메트릭 분석 결과,\n\n${lines}\n\n위 서버의 CPU가 수치상 위험 수준입니다. 즉각적인 부하 분산 및 점검이 권고됩니다.`
-  }
-
-  if (warn.length > 0) {
-    const lines = warn
-      .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-      .join('\n')
-    return `경계 수준 서버가 감지되었습니다.\n\n${lines}\n\n현재 수준에서 트래픽 분산 검토를 권장합니다.`
-  }
-
-  const avgCpu = (entries.reduce((s, [, m]) => s + m.cpu_usage, 0) / entries.length).toFixed(1)
-  const avgMem = (entries.reduce((s, [, m]) => s + m.memory_usage, 0) / entries.length).toFixed(1)
-  const lines  = entries
-    .map(([id, m]) => `• [${id}]  CPU ${m.cpu_usage.toFixed(1)}%  /  MEM ${m.memory_usage.toFixed(1)}%`)
-    .join('\n')
-  return `${entries.length}대 서버 모두 정상 운영 중입니다.\n\n${lines}\n\n전체 평균  CPU ${avgCpu}%  /  MEM ${avgMem}%`
-}
-
-// ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
 export default function PulseDoctor({ metrics }: Props) {
-  const [messages,   setMessages]   = useState<Message[]>([])
-  const [inputValue, setInputValue] = useState('')
-  const [isTyping,   setIsTyping]   = useState(false)
-
-  // metrics 수신 여부 — 이 값이 false일 때 챗봇 전체를 비활성 상태로 전환
-  const hasData = Object.keys(metrics).length > 0
-
-  // 메시지 목록 하단 자동 스크롤
-  const scrollRef       = useRef<HTMLDivElement>(null)
-  const welcomeShownRef = useRef(false)
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, isTyping])
-
-  // metrics 첫 수신 시 환영 메시지 1회 주입 — 이후 1초 갱신으로는 재실행되지 않음
-  useEffect(() => {
-    if (!hasData || welcomeShownRef.current) return
-    welcomeShownRef.current = true
-    setMessages([{
-      id:      crypto.randomUUID(),
-      role:    'assistant',
-      content: `인프라 데이터 스트리밍 연결이 완료되었습니다.\n\n${Object.keys(metrics).length}대 서버의 실시간 모니터링이 시작되었습니다.\n서버 상태에 대해 무엇이든 질문해 보세요.`,
-    }])
-  }, [hasData]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── 전송 핸들러 ────────────────────────────────────────────────────────────
-  function handleSend() {
-    const text = inputValue.trim()
-    if (!text || isTyping) return
-
-    // 유저 말풍선 즉시 추가
-    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
-    setInputValue('')
-    setIsTyping(true)
-
-    // 전송 시점의 metrics 스냅샷으로 응답 생성 (클로저 캡처 — 지연 후에도 send 시점 값 유지)
-    const response = buildMockResponse(metrics)
-
-    // 타이핑 인디케이터 노출 후 AI 응답 주입
-    setTimeout(() => {
-      setIsTyping(false)
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content: response }])
-    }, 1_500)
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
-  }
+  const {
+    messages,
+    inputValue,
+    setInputValue,
+    isTyping,
+    hasData,
+    scrollRef,
+    handleSend,
+    handleKeyDown,
+  } = usePulseDoctor(metrics)
 
   return (
     <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-4 md:p-5">
