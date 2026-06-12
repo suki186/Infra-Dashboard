@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,18 +16,11 @@ import type { ChartData, ChartOptions } from 'chart.js'
 import { supabase } from '@/src/utils/supabase'
 import type { ServerMetric } from '@/src/config/infrastructure'
 import { SERVER_STYLES, SERVER_IDS } from '@/src/config/infrastructure'
+import { useMetricsBuffer } from '@/src/hooks/useMetricsBuffer'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
-const MAX_POINTS = 30
-
-// ─── 타입 ─────────────────────────────────────────────────────────────────────
-// 1초 단위 시간 슬롯: 동일 초에 도착한 3대 서버 데이터를 한 슬롯에 묶음
-type TimeSlot = {
-  time:   string                  // HH:MM:SS 라벨 (X축)
-  values: Record<string, number>  // server_id → cpu_usage
-}
 
 // ─── Chart.js 옵션 ─────────────────────────────────────────────────────────────
 const chartOptions: ChartOptions<'line'> = {
@@ -84,7 +77,7 @@ const chartOptions: ChartOptions<'line'> = {
 
 // ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
 export default function RealtimeChart() {
-  const [history, setHistory] = useState<TimeSlot[]>([])
+  const { addDataToBuffer, timeSlots } = useMetricsBuffer()
 
   useEffect(() => {
     const channel = supabase
@@ -94,32 +87,8 @@ export default function RealtimeChart() {
         { event: 'INSERT', schema: 'public', table: 'infrastructure_metrics' },
         (payload) => {
           const row = payload.new as ServerMetric
-          if (!SERVER_STYLES[row.server_id]) return  // 알 수 없는 서버 무시
-
-          const timeLabel = new Date().toISOString().slice(11, 19)
-
-          setHistory(prev => {
-            const last = prev[prev.length - 1]
-
-            if (last && last.time === timeLabel) {
-              // 동일 초 → 기존 슬롯에 서버 값 갱신
-              const updated = [...prev]
-              updated[updated.length - 1] = {
-                ...last,
-                values: { ...last.values, [row.server_id]: row.cpu_usage },
-              }
-              return updated
-            }
-
-            // 새로운 초 → 슬롯 추가 후 슬라이딩 윈도우 적용
-            const next: TimeSlot = {
-              time:   timeLabel,
-              values: { [row.server_id]: row.cpu_usage },
-            }
-            const updated = [...prev, next]
-            if (updated.length > MAX_POINTS) updated.shift()
-            return updated
-          })
+          if (!SERVER_STYLES[row.server_id]) return
+          addDataToBuffer(row)
         }
       )
       .subscribe()
@@ -127,16 +96,16 @@ export default function RealtimeChart() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [addDataToBuffer])
 
-  // ─── chart.js 데이터 빌드 ────────────────────────────────────────────────
+  // ─── chart.js 데이터 빌드 ─────────────────────────────────────────────────
   const data: ChartData<'line'> = {
-    labels: history.map(h => h.time),
+    labels: timeSlots.map(s => s.time),
     datasets: SERVER_IDS.map(id => {
       const style = SERVER_STYLES[id]
       return {
         label:            style.label,
-        data:             history.map(h => h.values[id] ?? null),
+        data:             timeSlots.map(s => s.values[id] ?? null),
         borderColor:      style.color,
         backgroundColor:  style.color.replace('rgb(', 'rgba(').replace(')', ', 0.08)'),
         borderWidth:      2,
@@ -148,7 +117,7 @@ export default function RealtimeChart() {
     }),
   }
 
-  const isEmpty = history.length === 0
+  const isEmpty = timeSlots.length === 0
 
   return (
     <div className="relative w-full h-full min-h-0">
