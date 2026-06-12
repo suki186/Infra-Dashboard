@@ -5,6 +5,7 @@ import { supabase } from '@/src/utils/supabase'
 import type { MetricsMap, ServerMetric } from '@/src/config/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
+import PulseDoctor from '@/src/components/chatbot/PulseDoctor'
 
 export default function DashboardPage() {
   const [metrics, setMetrics]         = useState<MetricsMap>({})
@@ -127,19 +128,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 챗봇 영역 */}
-        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-4 md:p-5">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-base">🤖</span>
-            <h2 className="text-sm font-semibold text-slate-100">
-              Pulse Doctor
-            </h2>
-          </div>
-          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-36 lg:min-h-0">
-            <p className="text-slate-600 text-sm">챗봇 영역</p>
-          </div>
-          <div className="h-10 shrink-0 rounded-lg bg-slate-700 border border-slate-600" />
-        </div>
+        <PulseDoctor />
 
       </section>
     </div>

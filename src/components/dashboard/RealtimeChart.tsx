@@ -124,6 +124,21 @@ const RealtimeChart = memo(function RealtimeChart() {
         })
       }
 
+      // CPU 90% 임계점 색상 트리거 — 최신 슬롯의 값만 검사하면 충분
+      const latest = slots[len - 1]
+      SERVER_IDS.forEach((id, j) => {
+        const cpu = latest.values[id] ?? 0
+        const ds  = datasets[j]
+        if (cpu >= 90) {
+          ds.borderColor     = 'rgb(239, 68, 68)'
+          ds.backgroundColor = 'rgba(239, 68, 68, 0.08)'
+        } else {
+          const { color } = SERVER_STYLES[id]
+          ds.borderColor     = color
+          ds.backgroundColor = color.replace('rgb(', 'rgba(').replace(')', ', 0.08)')
+        }
+      })
+
       chart.update('none')
     }, PAINT_MS)
 
