@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { MetricsMap } from '@/src/config/infrastructure'
+import { sendChatQuestionApi } from '@/src/services/aiApi'
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 export type Message = {
@@ -59,7 +60,7 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
     }])
   }, [hasData]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── 전송 핸들러 (OpenAI /api/chat 연동) ─────────────────────────────────
+  // ─── 전송 핸들러 ─────────────────────────────────────────────────────────
   async function sendMessage() {
     const text = inputValue.trim()
     if (!text || isTyping) return
@@ -69,21 +70,8 @@ export function usePulseDoctor(metrics: MetricsMap): UsePulseDoctorReturn {
     setIsTyping(true)
 
     try {
-      const res = await fetch('/api/chat', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: text, metrics }),
-      })
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data: { content?: string; error?: string } = await res.json()
-      if (data.error) throw new Error(data.error)
-
-      setMessages(prev => [...prev, {
-        id:      crypto.randomUUID(),
-        role:    'assistant',
-        content: data.content ?? '응답을 받지 못했습니다.',
-      }])
+      const content = await sendChatQuestionApi(text, metrics)
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'assistant', content }])
     } catch (err) {
       console.error('[usePulseDoctor]', err)
       setMessages(prev => [...prev, {
