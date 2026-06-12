@@ -65,16 +65,18 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="flex flex-col flex-1 p-6 gap-6">
+    // 최상위 래퍼: 가로 스크롤 차단
+    <div className="flex flex-col flex-1 p-6 gap-6 w-full max-w-full overflow-x-hidden">
+
       {/* 상단 헤더 */}
-      <header className="flex items-center justify-between px-5 py-3 rounded-xl bg-slate-800 border border-slate-700">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-y-2 px-5 py-3 rounded-xl bg-slate-800 border border-slate-700">
+        <div className="flex items-center gap-3 shrink-0">
           <span className={`text-lg leading-none ${sysStatus.dot}`}>●</span>
           <span className="text-sm font-semibold text-slate-100">
             {sysStatus.text}
           </span>
         </div>
-        <div className="flex items-center gap-6 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-400">
           <span>
             모니터링 서버{' '}
             <strong className="text-slate-200 font-semibold">
@@ -94,8 +96,8 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 요약 카드 3열 */}
-      <section className="grid grid-cols-3 gap-4">
+      {/* 요약 카드 */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {summaryCards.map((card) => (
           <div
             key={card.title}
@@ -117,10 +119,11 @@ export default function DashboardPage() {
         ))}
       </section>
 
-      {/* 메인 영역: 차트(70%) + 챗봇(30%) */}
-      <section className="flex gap-4 flex-1 min-h-0">
-        {/* 차트 영역 */}
-        <div className="flex flex-col gap-3 flex-[7] rounded-xl bg-slate-800 border border-slate-700 p-5">
+      {/* 메인 영역: 차트(70%) + 챗봇(30%)  */}
+      <section className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
+
+        {/* 차트 영역 — min-w-0으로 canvas 크기에 밀려나는 것 차단 */}
+        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[7] min-h-80 lg:min-h-0 rounded-xl bg-slate-800 border border-slate-700 p-5">
           <h2 className="text-sm font-semibold text-slate-100 shrink-0">
             실시간 인프라 메트릭 스트리밍
           </h2>
@@ -130,18 +133,19 @@ export default function DashboardPage() {
         </div>
 
         {/* 챗봇 영역 */}
-        <div className="flex flex-col gap-3 flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-5">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="text-base">🤖</span>
             <h2 className="text-sm font-semibold text-slate-100">
               Pulse Doctor
             </h2>
           </div>
-          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-64">
+          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-48 lg:min-h-0">
             <p className="text-slate-600 text-sm">챗봇 영역</p>
           </div>
-          <div className="h-10 rounded-lg bg-slate-700 border border-slate-600" />
+          <div className="h-10 shrink-0 rounded-lg bg-slate-700 border border-slate-600" />
         </div>
+
       </section>
     </div>
   )

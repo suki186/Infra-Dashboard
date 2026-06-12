@@ -28,7 +28,7 @@ export default function RootLayout({
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
-      <body className="flex min-h-screen bg-slate-900 text-slate-100 antialiased">
+      <body className="flex min-h-screen bg-slate-900 text-slate-100 antialiased overflow-x-hidden">
         <Sidebar />
         <main className="flex-1 flex flex-col min-w-0 bg-slate-900">
           {children}
