@@ -26,11 +26,13 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
     >
-      <body className="flex min-h-screen bg-slate-900 text-slate-100 antialiased overflow-x-hidden">
+      {/* h-full: */}
+      <body className="h-full flex bg-slate-900 text-slate-100 antialiased overflow-hidden">
         <Sidebar />
-        <main className="flex-1 flex flex-col min-w-0 bg-slate-900">
+        {/* overflow-hidden */}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-900">
           {children}
         </main>
       </body>

@@ -19,8 +19,6 @@ export default function DashboardPage() {
         { event: 'INSERT', schema: 'public', table: 'infrastructure_metrics' },
         (payload) => {
           const row = payload.new as ServerMetric
-          console.log('📥 수신된 메트릭:', row)
-
           setMetrics(prev => ({ ...prev, [row.server_id]: row }))
           setLastUpdated(new Date().toLocaleTimeString('ko-KR'))
         }
@@ -31,9 +29,7 @@ export default function DashboardPage() {
         }
       })
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [])
 
   // ─── 파생 상태 ───────────────────────────────────────────────────────────
@@ -65,11 +61,10 @@ export default function DashboardPage() {
   ]
 
   return (
-    // 최상위 래퍼: 가로 스크롤 차단
-    <div className="flex flex-col flex-1 p-6 gap-6 w-full max-w-full overflow-x-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden p-4 md:p-6 gap-4 md:gap-6 w-full">
 
-      {/* 상단 헤더 */}
-      <header className="flex flex-wrap items-center justify-between gap-y-2 px-5 py-3 rounded-xl bg-slate-800 border border-slate-700">
+      {/* 헤더 */}
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-y-2 px-5 py-3 rounded-xl bg-slate-800 border border-slate-700">
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-lg leading-none ${sysStatus.dot}`}>●</span>
           <span className="text-sm font-semibold text-slate-100">
@@ -97,21 +92,21 @@ export default function DashboardPage() {
       </header>
 
       {/* 요약 카드 */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="shrink-0 grid grid-cols-1 md:grid-cols-3 gap-4">
         {summaryCards.map((card) => (
           <div
             key={card.title}
-            className="flex flex-col gap-2 px-6 py-5 rounded-xl bg-slate-800 border border-slate-700"
+            className="flex flex-col gap-1.5 px-4 py-3 md:px-6 md:py-4 rounded-xl bg-slate-800 border border-slate-700"
           >
             <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">
               {card.title}
             </p>
             <div className="flex items-end gap-1">
-              <span className={`text-4xl font-bold tabular-nums ${card.color}`}>
+              <span className={`text-3xl md:text-4xl font-bold tabular-nums ${card.color}`}>
                 {card.value}
               </span>
               {card.unit && (
-                <span className="text-base text-slate-400 mb-1">{card.unit}</span>
+                <span className="text-base text-slate-400 mb-0.5">{card.unit}</span>
               )}
             </div>
             <p className="text-xs text-slate-500">{card.sub}</p>
@@ -119,11 +114,11 @@ export default function DashboardPage() {
         ))}
       </section>
 
-      {/* 메인 영역: 차트(70%) + 챗봇(30%)  */}
-      <section className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
+      {/* 메인 영역: 차트(70%) + 챗봇(30%) */}
+      <section className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-hidden">
 
-        {/* 차트 영역 — min-w-0으로 canvas 크기에 밀려나는 것 차단 */}
-        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[7] min-h-80 lg:min-h-0 rounded-xl bg-slate-800 border border-slate-700 p-5">
+        {/* 차트 영역 */}
+        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[7] min-h-64 lg:min-h-0 rounded-xl bg-slate-800 border border-slate-700 p-4 md:p-5">
           <h2 className="text-sm font-semibold text-slate-100 shrink-0">
             실시간 인프라 메트릭 스트리밍
           </h2>
@@ -133,14 +128,14 @@ export default function DashboardPage() {
         </div>
 
         {/* 챗봇 영역 */}
-        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-5">
+        <div className="flex flex-col gap-3 min-w-0 w-full lg:flex-[3] rounded-xl bg-slate-800 border border-slate-700 p-4 md:p-5">
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-base">🤖</span>
             <h2 className="text-sm font-semibold text-slate-100">
               Pulse Doctor
             </h2>
           </div>
-          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-48 lg:min-h-0">
+          <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-slate-600 min-h-36 lg:min-h-0">
             <p className="text-slate-600 text-sm">챗봇 영역</p>
           </div>
           <div className="h-10 shrink-0 rounded-lg bg-slate-700 border border-slate-600" />
