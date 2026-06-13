@@ -1,19 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { ServerMetric } from '@/src/config/infrastructure'
+import type { TimeSlot, MetricsBuffer } from '@/src/types/metrics'
 
 const FLUSH_MS  = 300  // 큐 → 공유 버퍼 플러시 주기
 const MAX_SLOTS = 30   // X축 윈도우 크기
 const MAX_QUEUE = 300  // 이벤트 큐 상한 (30ms × 3서버 × ~3초치)
-
-export type TimeSlot = {
-  time:   string                  // HH:MM:SS (X축 레이블)
-  values: Record<string, number>  // server_id → cpu_usage
-}
-
-export type MetricsBuffer = {
-  addDataToBuffer: (data: ServerMetric) => void
-  sharedBufferRef: { current: TimeSlot[] }
-}
 
 export function useMetricsBuffer(): MetricsBuffer {
   const queueRef        = useRef<ServerMetric[]>([])

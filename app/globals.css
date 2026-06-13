@@ -1,1 +1,50 @@
 @import "tailwindcss";
+
+/* ─── PulseDoctor 어시스턴트 말풍선 내 <details>/<summary> 스타일 ──────────────
+   .pd-msg 부모 스코프에만 적용되어 전역 스타일을 오염시키지 않는다.
+   rehype-raw 가 렌더링한 네이티브 HTML 요소를 타깃으로 한다.               */
+
+.pd-msg details {
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(71 85 105 / 0.5);
+  overflow: hidden;
+}
+
+.pd-msg summary {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.6875rem;        /* 11px — 말풍선 xs 기준 */
+  color: rgb(148 163 184);     /* slate-400 */
+  background: rgb(30 41 59 / 0.6);
+  user-select: none;
+  list-style: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Chrome/Safari 기본 disclosure 삼각형 제거 */
+.pd-msg summary::-webkit-details-marker { display: none; }
+
+/* 커스텀 열림/닫힘 인디케이터 */
+.pd-msg summary::before {
+  content: '▶';
+  display: inline-block;
+  font-size: 0.5rem;
+  transition: transform 0.2s;
+  color: rgb(100 116 139);
+}
+.pd-msg details[open] > summary::before { transform: rotate(90deg); }
+
+.pd-msg summary:hover {
+  background: rgb(51 65 85 / 0.8);
+  color: rgb(203 213 225);
+}
+
+/* details 내부 콘텐츠 패딩 (summary 제외) */
+.pd-msg details > *:not(summary) {
+  margin-left: 0;
+}
