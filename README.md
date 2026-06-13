@@ -6,6 +6,11 @@
 
 ---
 
+## 시연 영상
+https://github.com/user-attachments/assets/845e2626-ea2b-45c1-b1cc-19610074b9bc
+
+---
+
 ## 핵심 기능
 
 - **60fps 실시간 차트** — `useRef` 공유 버퍼 + 제로 할당(zero-allocation) 배열 재사용으로 GC 압박 없이 300ms 독립 드로우 루프 구동
