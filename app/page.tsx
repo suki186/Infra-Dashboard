@@ -5,7 +5,8 @@ import { supabase } from '@/src/utils/supabase'
 import type { MetricsMap, ServerMetric } from '@/src/config/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
-import { LogTerminal, type LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
+import { LogTerminal } from '@/src/components/dashboard/LogTerminal'
+import type { LogTerminalHandle } from '@/src/types/terminal'
 import PulseDoctor from '@/src/components/chatbot/PulseDoctor'
 
 export default function DashboardPage() {

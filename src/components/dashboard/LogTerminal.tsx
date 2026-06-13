@@ -6,23 +6,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { supabase } from '@/src/utils/supabase'
-
-// ─── 공개 타입 ─────────────────────────────────────────────────────────────────
-export type LogTerminalHandle = {
-  /** 마지막 N줄 로그를 '[timestamp] [LEVEL] [server_id] message' 형식으로 반환 */
-  getRecentLogs: (n?: number) => string[]
-}
-
-// ─── 내부 타입 ─────────────────────────────────────────────────────────────────
-type LogLevel = 'INFO' | 'WARN' | 'ERROR'
-
-type LogEntry = {
-  id:         number
-  created_at: string
-  server_id:  string
-  level:      LogLevel
-  message:    string
-}
+import type { LogTerminalHandle, LogLevel, LogEntry } from '@/src/types/terminal'
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────────
 const MAX_LOGS = 100

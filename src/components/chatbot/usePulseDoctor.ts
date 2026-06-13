@@ -10,26 +10,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
 import type { MetricsMap } from '@/src/config/infrastructure'
-import type { LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
+import type { LogTerminalHandle } from '@/src/types/terminal'
+import type { Message, UsePulseDoctorReturn } from '@/src/types/chat'
 import { sendChatQuestionApi } from '@/src/services/aiApi'
-
-// ─── 타입 ─────────────────────────────────────────────────────────────────────
-export type Message = {
-  id:      string
-  role:    'user' | 'assistant'
-  content: string
-}
-
-export type UsePulseDoctorReturn = {
-  messages:      Message[]
-  inputValue:    string
-  setInputValue: (v: string) => void
-  isTyping:      boolean
-  hasData:       boolean
-  scrollRef:     RefObject<HTMLDivElement | null>
-  handleSend:    () => void
-  handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void
-}
 
 // ─── 훅 ───────────────────────────────────────────────────────────────────────
 export function usePulseDoctor(

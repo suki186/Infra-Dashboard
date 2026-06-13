@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import type { MetricsMap } from '@/src/config/infrastructure'
-import type { LogTerminalHandle } from '@/src/components/dashboard/LogTerminal'
+import type { LogTerminalHandle } from '@/src/types/terminal'
 import { usePulseDoctor } from './usePulseDoctor'
 
 type Props = {
@@ -77,7 +77,6 @@ export default function PulseDoctor({ metrics, logTerminalRef }: Props) {
 
       {/* 헤더 */}
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-base">🤖</span>
         <h2 className="text-sm font-semibold text-slate-100">Pulse Doctor</h2>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-500">
           <span className={`w-1.5 h-1.5 rounded-full
