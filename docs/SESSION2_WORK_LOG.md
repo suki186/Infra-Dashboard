@@ -260,7 +260,7 @@ chart.update('none')  // 데이터 + 색상이 단일 페인트로 반영
 
 ```tsx
 // app/page.tsx — Before
-<div className="flex flex-col ... lg:flex-[3] ...">
+<div className="flex flex-col ... lg:flex-3 ...">
   {/* 60줄의 인라인 스켈레톤 마크업 */}
 </div>
 
