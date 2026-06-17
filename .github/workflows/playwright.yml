@@ -31,6 +31,9 @@ jobs:
 
       - name: Run Playwright tests
         run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://mock-project.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-anon-key-for-testing-purposes"
 
       - name: Upload Playwright report on failure
         uses: actions/upload-artifact@v4
