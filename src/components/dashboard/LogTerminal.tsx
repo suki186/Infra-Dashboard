@@ -53,20 +53,6 @@ export const LogTerminal = forwardRef<LogTerminalHandle, object>(
     useImperativeHandle(ref, () => ({
       getRecentLogs: (n = 10) =>
         logsRef.current.slice(-n).map(formatLogLine),
-
-      injectLog: ({ server_id = 'kr-seoul-web-01', level = 'ERROR', message }) => {
-        const entry: LogEntry = {
-          id:         Date.now(),
-          created_at: new Date().toISOString(),
-          server_id,
-          level,
-          message,
-        }
-        const logs = logsRef.current
-        logs.push(entry)
-        if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS)
-        setTick(t => t + 1)
-      },
     }))
 
     // ─── Supabase Realtime 구독 ───────────────────────────────────────────

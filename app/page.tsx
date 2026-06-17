@@ -39,25 +39,6 @@ export default function DashboardPage() {
     return () => { supabase.removeChannel(channel) }
   }, [])
 
-  // ─── 장애 주입 핸들러 ─────────────────────────────────────────────────────
-  function handleFaultInject() {
-    setMetrics(prev => ({
-      ...prev,
-      'kr-seoul-web-01': {
-        server_id:    'kr-seoul-web-01',
-        status:       'ONLINE',
-        cpu_usage:    99,
-        memory_usage: 88,
-        disk_io:      97,
-      },
-    }))
-    logTerminalRef.current?.injectLog({
-      level:     'ERROR',
-      server_id: 'kr-seoul-web-01',
-      message:   '[CRITICAL ERROR] CPU OVERLOAD: 99% — 즉각 조치 필요',
-    })
-  }
-
   // ─── 파생 상태 ───────────────────────────────────────────────────────────
   const { serverCount, avgCpu, risk, alertCount, onlineCount } = deriveStats(metrics)
   const sysStatus = systemStatusLabel(risk)
@@ -114,13 +95,6 @@ export default function DashboardPage() {
               {alertCount} 건
             </strong>
           </span>
-          <button
-            onClick={handleFaultInject}
-            data-testid="fault-inject-btn"
-            className="ml-4 px-3 py-1 rounded-md text-xs font-medium bg-red-900/40 border border-red-700/50 text-red-400 hover:bg-red-800/50 transition-colors"
-          >
-            장애 주입
-          </button>
         </div>
       </header>
 
