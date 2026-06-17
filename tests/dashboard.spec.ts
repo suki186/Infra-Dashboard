@@ -36,8 +36,8 @@ async function setupRealtimeMock(page: Page) {
     return topicPromises.get(topic)!
   }
 
-  // Supabase 프로젝트: yuktbrzxlnznydmrudkv.supabase.co
-  await page.routeWebSocket(/yuktbrzxlnznydmrudkv\.supabase\.co\/realtime/, ws => {
+  // 프로젝트 ID를 하드코딩하지 않음 — CI env(mock-project)와 로컬 env 모두 매칭
+  await page.routeWebSocket(/\.supabase\.co\/realtime/, ws => {
     sendFn = (msg: string) => ws.send(msg)
 
     ws.onMessage(raw => {
