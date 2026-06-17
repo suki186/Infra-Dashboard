@@ -5,7 +5,8 @@ import { test, expect, type Page } from '@playwright/test'
  *
  * 실시간 스트리밍 특성상 고정 타이머(waitForTimeout) 대신
  * Playwright auto-waiting + locator 기반 toBeVisible() 을 사용한다.
- * (TC-05~07 의 channelReady() 이후 안전 마진에만 waitForTimeout 을 허용)
+ * TC-05~07: 단일 주입 후 대기 방식 대신 expect().toPass() 폴링 주입 패턴으로
+ * Race Condition을 근본 해소한다 — 리스너 미등록 시 자동 재주입·재단언으로 수렴.
  */
 
 // ── Supabase Realtime Phoenix 프로토콜 Mock ─────────────────────────────────
@@ -137,15 +138,14 @@ async function setupRealtimeMock(page: Page) {
     // page.tsx: supabase.channel('infrastructure_metrics_feed')
     async injectMetric(record: object) {
       await channelReady('realtime:infrastructure_metrics_feed')
-      // Phoenix 핸드셰이크 완료 후 React 이벤트 바인딩이 메모리에 완전히 등록될 때까지
-      // 1 s 유예 — CI 가상 서버의 느린 JS 실행 환경에서 Race Condition을 방지한다
-      await page.waitForTimeout(1000)
+      // 폴링 주입 패턴에서는 toPass() 재시도가 타이밍을 보완하므로 최소 마진만 유지
+      await page.waitForTimeout(200)
       sendPgInsert('realtime:infrastructure_metrics_feed', 'infrastructure_metrics', 'public', record)
     },
     // LogTerminal.tsx: supabase.channel('infrastructure_logs_feed')
     async injectLog(record: object) {
       await channelReady('realtime:infrastructure_logs_feed')
-      await page.waitForTimeout(1000)
+      await page.waitForTimeout(200)
       sendPgInsert('realtime:infrastructure_logs_feed', 'infrastructure_logs', 'public', record)
     },
   }
@@ -204,20 +204,20 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
     await page.waitForLoadState('networkidle')
     await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
 
-    // channelReady() 내부: phx_join ack 완료 대기 → 300ms 여유 → postgres_changes 전송
-    await mock.injectMetric({
-      server_id:    'kr-seoul-web-01',
-      status:       'ONLINE',
-      cpu_usage:    99,
-      memory_usage: 88,
-      disk_io:      97,
-    })
-
+    // 폴링 주입: React .subscribe() 리스너가 아직 미등록인 경우 재주입으로 수렴
     // infrastructureHelpers.ts: maxCpu >= 90 → risk = { label: '위험', color: 'text-red-400' }
-    // page.tsx summaryCards[2] value span: className = `... ${card.color}` = 'text-red-400'
-    await expect(
-      page.locator('span.text-red-400').filter({ hasText: '위험' })
-    ).toBeVisible()
+    await expect(async () => {
+      await mock.injectMetric({
+        server_id:    'kr-seoul-web-01',
+        status:       'ONLINE',
+        cpu_usage:    99,
+        memory_usage: 88,
+        disk_io:      97,
+      })
+      await expect(
+        page.locator('span.text-red-400').filter({ hasText: '위험' })
+      ).toBeVisible({ timeout: 500 })
+    }).toPass({ intervals: [500], timeout: 10_000 })
   })
 
   // TC-06: 시스템 에러 로그 터미널 인입 검증 ────────────────────────────────
@@ -231,18 +231,20 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
     await page.waitForLoadState('networkidle')
     await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
 
-    await mock.injectLog({
-      id:         1,
-      created_at: new Date().toISOString(),
-      server_id:  'kr-seoul-web-01',
-      level:      'ERROR',
-      message:    '[CRITICAL ERROR] CPU OVERLOAD: 99% — 즉각 조치 필요',
-    })
-
-    // LogTerminal 최외곽 컨테이너: div.bg-slate-950.rounded-xl
-    // Sidebar 는 <aside>.bg-slate-950 이므로 div 선택자로 구별됨
-    const logTerminal = page.locator('div.bg-slate-950.rounded-xl')
-    await expect(logTerminal).toContainText('CRITICAL')
+    // 폴링 주입: LogTerminal .subscribe() 리스너가 미등록인 경우 재주입으로 수렴
+    // LogTerminal 최외곽 컨테이너: div.bg-slate-950.rounded-xl (Sidebar <aside>와 구별)
+    await expect(async () => {
+      await mock.injectLog({
+        id:         1,
+        created_at: new Date().toISOString(),
+        server_id:  'kr-seoul-web-01',
+        level:      'ERROR',
+        message:    '[CRITICAL ERROR] CPU OVERLOAD: 99% — 즉각 조치 필요',
+      })
+      await expect(
+        page.locator('div.bg-slate-950.rounded-xl')
+      ).toContainText('CRITICAL', { timeout: 500 })
+    }).toPass({ intervals: [500], timeout: 10_000 })
   })
 
   // TC-07: AI 챗봇 비동기 답변 검증 ─────────────────────────────────────────
@@ -266,18 +268,23 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
     await page.waitForLoadState('networkidle')
     await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
 
-    // 메트릭 주입 → usePulseDoctor: hasData = Object.keys(metrics).length > 0 → true
-    // → PulseDoctor.tsx: input[disabled] 속성 제거
-    await mock.injectMetric({
-      server_id:    'kr-seoul-web-01',
-      status:       'ONLINE',
-      cpu_usage:    99,
-      memory_usage: 88,
-      disk_io:      97,
-    })
+    // Phase 1 — 폴링 주입: 메트릭 수신 → hasData=true → 챗봇 입력창 활성화 확인
+    // usePulseDoctor: hasData = Object.keys(metrics).length > 0 → input[disabled] 제거
+    await expect(async () => {
+      await mock.injectMetric({
+        server_id:    'kr-seoul-web-01',
+        status:       'ONLINE',
+        cpu_usage:    99,
+        memory_usage: 88,
+        disk_io:      97,
+      })
+      await expect(
+        page.locator('input[type="text"]')
+      ).toBeEnabled({ timeout: 500 })
+    }).toPass({ intervals: [500], timeout: 10_000 })
 
+    // Phase 2 — 챗봇 조작 및 AI 응답 단언 (챗봇 활성화 보장 후 순차 실행)
     const chatInput = page.locator('input[type="text"]')
-    // fill() 은 actionability auto-waiting 으로 disabled 해제까지 자동 대기
     await chatInput.fill('현재 시스템 장애 원인 분석해줘')
     await chatInput.press('Enter')
 
