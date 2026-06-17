@@ -137,15 +137,15 @@ async function setupRealtimeMock(page: Page) {
     // page.tsx: supabase.channel('infrastructure_metrics_feed')
     async injectMetric(record: object) {
       await channelReady('realtime:infrastructure_metrics_feed')
-      // phx_reply 가 브라우저에서 완전히 처리(binding.id 세팅, 채널 joined 전환)된 뒤
-      // postgres_changes 가 도착하도록 안전 마진 확보
-      await page.waitForTimeout(300)
+      // Phoenix 핸드셰이크 완료 후 React 이벤트 바인딩이 메모리에 완전히 등록될 때까지
+      // 1 s 유예 — CI 가상 서버의 느린 JS 실행 환경에서 Race Condition을 방지한다
+      await page.waitForTimeout(1000)
       sendPgInsert('realtime:infrastructure_metrics_feed', 'infrastructure_metrics', 'public', record)
     },
     // LogTerminal.tsx: supabase.channel('infrastructure_logs_feed')
     async injectLog(record: object) {
       await channelReady('realtime:infrastructure_logs_feed')
-      await page.waitForTimeout(300)
+      await page.waitForTimeout(1000)
       sendPgInsert('realtime:infrastructure_logs_feed', 'infrastructure_logs', 'public', record)
     },
   }
