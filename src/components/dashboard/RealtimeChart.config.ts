@@ -22,9 +22,9 @@ export const CHART_OPTIONS: ChartOptions<'line'> = {
     },
   },
   plugins: {
-    legend: {
-      labels: { color: '#cbd5e1', boxWidth: 12, padding: 20, font: { size: 12 } },
-    },
+    // 내장 legend는 canvas 안에 그려지므로 수평 스크롤 시 밀려남.
+    // HTML 범례를 스크롤 영역 바깥에 별도 렌더링하고 여기서는 비활성화.
+    legend: { display: false },
     tooltip: {
       backgroundColor: 'rgba(15, 23, 42, 0.9)',
       borderColor: 'rgba(148, 163, 184, 0.2)', borderWidth: 1,
