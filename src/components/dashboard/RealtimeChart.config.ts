@@ -16,9 +16,13 @@ export const CHART_OPTIONS: ChartOptions<'line'> = {
     },
     y: {
       min: 0, max: 100,
-      ticks:  { color: '#94a3b8', callback: (v) => `${v}%`, stepSize: 25 },
+      // 레이블은 스크롤 바깥 고정 캔버스에서 수동 렌더링하므로 메인 차트에서 비활성화.
+      // 틱 값과 그리드 선은 계속 계산되고 그려짐 — display: false 와 달리 grid 는 살아있음.
+      ticks:  { color: '#94a3b8', callback: (v) => `${Number(v).toFixed(0)}%`, maxTicksLimit: 5, display: false },
       grid:   { color: 'rgba(148, 163, 184, 0.08)' },
-      border: { color: 'rgba(148, 163, 184, 0.2)'  },
+      border: { display: false },
+      // afterFit 으로 메인 차트 내 Y축 예약 공간을 0으로 만들어 플롯 영역이 캔버스 전체를 사용하게 함.
+      afterFit(scale) { scale.width = 0 },
     },
   },
   plugins: {
