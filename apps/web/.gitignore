@@ -1,0 +1,7 @@
+# Frontend-specific ignores (common items are in root .gitignore)
+
+# next.js generated
+next-env.d.ts
+
+# vercel
+.vercel
