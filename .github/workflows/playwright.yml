@@ -11,10 +11,6 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
 
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +22,19 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Workspace root의 node_modules/.bin을 PATH에 추가
+      # apps/web에는 node_modules가 없고 root에 호이스팅되어 있으므로,
+      # Playwright가 서브프로세스(next start 등)를 spawn할 때도 next 바이너리를 찾을 수 있게 한다.
+      - name: Export workspace bin to PATH
+        run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> $GITHUB_PATH
+
+      - name: Build Next.js app
+        working-directory: apps/web
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://mock-project.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-anon-key-for-testing-purposes"
 
       - name: Install Playwright browsers
         working-directory: apps/web
