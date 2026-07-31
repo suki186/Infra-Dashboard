@@ -153,13 +153,19 @@ async function setupRealtimeMock(page: Page) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── 공통 헬퍼 ────────────────────────────────────────────────────────────────
+// WebSocket 기반 실시간 앱은 네트워크가 항상 활성이므로 'networkidle'은 영원히 성립하지 않음.
+// 대신 페이지가 실제로 사용 가능한 시점을 나타내는 고정 UI 요소(요약 카드)의 가시성으로 판단한다.
+// page.tsx — 요약 카드는 Supabase 연결 여부와 무관하게 항상 렌더링된다
+async function gotoAndWaitReady(page: Page) {
+  await page.goto('/')
+  await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+}
+
 // ── TC-01~04. 핵심 컴포넌트 노출 테스트 ──────────────────────────────────────
 test.describe('PulseOps 대시보드 핵심 컴포넌트 노출', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    // page.tsx — 요약 카드는 Supabase 연결 여부와 무관하게 항상 렌더링된다
-    await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+    await gotoAndWaitReady(page)
   })
 
   test('브라우저 탭 타이틀에 "PulseOps"가 포함된다', async ({ page }) => {
@@ -200,9 +206,7 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
   test('TC-05: CPU 99% 메트릭 WebSocket 주입 후 위험도 카드가 text-red-400 상태로 변이된다', async ({ page }) => {
     const mock = await setupRealtimeMock(page)
 
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+    await gotoAndWaitReady(page)
 
     // 폴링 주입: React .subscribe() 리스너가 아직 미등록인 경우 재주입으로 수렴
     // infrastructureHelpers.ts: maxCpu >= 90 → risk = { label: '위험', color: 'text-red-400' }
@@ -227,9 +231,7 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
   test('TC-06: 로그 WebSocket 주입 후 터미널에 CRITICAL ERROR 패킷이 실시간 인입된다', async ({ page }) => {
     const mock = await setupRealtimeMock(page)
 
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+    await gotoAndWaitReady(page)
 
     // 폴링 주입: LogTerminal .subscribe() 리스너가 미등록인 경우 재주입으로 수렴
     // LogTerminal 최외곽 컨테이너: div.bg-slate-950.rounded-xl (Sidebar <aside>와 구별)
@@ -264,9 +266,7 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
 
     const mock = await setupRealtimeMock(page)
 
-    await page.goto('/')
-    await page.waitForLoadState('networkidle')
-    await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+    await gotoAndWaitReady(page)
 
     // Phase 1 — 폴링 주입: 메트릭 수신 → hasData=true → 챗봇 입력창 활성화 확인
     // usePulseDoctor: hasData = Object.keys(metrics).length > 0 → input[disabled] 제거
