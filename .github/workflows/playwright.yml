@@ -11,10 +11,6 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
 
-    env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -22,14 +18,35 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        # macOS 생성 lockfile에는 linux 바이너리 항목 누락 (npm/cli#4828).
+        # lockfile 있으면 npm이 optional dep을 fresh resolve 안 함 → 삭제 후 설치.
+        # setup-node 캐시 키는 checkout 시점 lockfile로 이미 계산됐으므로 ~/.npm 캐시 적중함.
+        run: |
+          rm package-lock.json
+          npm install
+
+      # Workspace root의 node_modules/.bin을 PATH에 추가
+      # apps/web에는 node_modules가 없고 root에 호이스팅되어 있으므로,
+      # Playwright가 서브프로세스(next start 등)를 spawn할 때도 next 바이너리를 찾을 수 있게 한다.
+      - name: Export workspace bin to PATH
+        run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> $GITHUB_PATH
+
+      - name: Build Next.js app
+        working-directory: apps/web
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://mock-project.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-anon-key-for-testing-purposes"
 
       - name: Install Playwright browsers
+        working-directory: apps/web
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
+        working-directory: apps/web
         run: npm run test:e2e
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://mock-project.supabase.co"
@@ -40,5 +57,5 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: playwright-report/
+          path: apps/web/playwright-report/
           retention-days: 30

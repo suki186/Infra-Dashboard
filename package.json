@@ -1,40 +1,10 @@
 {
-  "name": "infra-dashboard",
-  "version": "0.1.0",
+  "name": "pulseops-monorepo",
   "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "simulate": "node scripts/simulator.mjs",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.108.1",
-    "@tanstack/react-query": "^5.101.0",
-    "chart.js": "^4.5.1",
-    "dotenv": "^17.4.2",
-    "lucide-react": "^1.17.0",
-    "next": "16.2.9",
-    "react": "19.2.4",
-    "react-chartjs-2": "^5.3.1",
-    "react-dom": "19.2.4",
-    "react-markdown": "^10.1.0",
-    "rehype-raw": "^7.0.0",
-    "remark-gfm": "^4.0.1",
-    "zustand": "^5.0.14"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.61.0",
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build:web": "npm run build --workspace=apps/web",
+    "test:web": "npm run test:e2e --workspace=apps/web"
   }
 }
