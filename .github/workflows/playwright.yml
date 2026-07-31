@@ -21,7 +21,12 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        # macOS 생성 lockfile에는 linux 바이너리 항목 누락 (npm/cli#4828).
+        # lockfile 있으면 npm이 optional dep을 fresh resolve 안 함 → 삭제 후 설치.
+        # setup-node 캐시 키는 checkout 시점 lockfile로 이미 계산됐으므로 ~/.npm 캐시 적중함.
+        run: |
+          rm package-lock.json
+          npm install
 
       # Workspace root의 node_modules/.bin을 PATH에 추가
       # apps/web에는 node_modules가 없고 root에 호이스팅되어 있으므로,
