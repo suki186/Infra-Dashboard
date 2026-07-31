@@ -21,7 +21,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       # Workspace root의 node_modules/.bin을 PATH에 추가
       # apps/web에는 node_modules가 없고 root에 호이스팅되어 있으므로,
