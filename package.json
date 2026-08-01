@@ -5,6 +5,8 @@
   "scripts": {
     "dev:web": "npm run dev --workspace=apps/web",
     "build:web": "npm run build --workspace=apps/web",
-    "test:web": "npm run test:e2e --workspace=apps/web"
+    "test:web": "npm run test:e2e --workspace=apps/web",
+    "dev:server": "npm run dev --workspace=apps/server",
+    "build:server": "npm run build --workspace=apps/server"
   }
 }
