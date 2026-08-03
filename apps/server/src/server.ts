@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { prisma } from './db/client';
+import type { ServerMetric } from '@infra-dashboard/shared';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -19,6 +20,18 @@ app.get('/health/db', async (request, reply) => {
     reply.code(500);
     return { status: 'error', message: (err as Error).message };
   }
+});
+
+app.get('/health/shared-types', async () => {
+  const sample: ServerMetric = {
+    serverId: 'kr-seoul-web-01',
+    status: 'healthy',
+    cpuUsage: 12.3,
+    memoryUsage: 45.6,
+    diskIo: 1.2,
+    createdAt: new Date().toISOString(),
+  };
+  return sample;
 });
 
 app

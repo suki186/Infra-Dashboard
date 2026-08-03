@@ -12,6 +12,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@infra-dashboard/shared": "*",
     "@supabase/supabase-js": "^2.108.1",
     "@tanstack/react-query": "^5.101.0",
     "chart.js": "^4.5.1",
