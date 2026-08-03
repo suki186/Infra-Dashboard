@@ -3,12 +3,30 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// Placeholder model — real schema migration happens in a later step.
-model Placeholder {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
+model InfrastructureLog {
+  id        BigInt   @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  serverId  String   @map("server_id")
+  level     String
+  message   String
+
+  @@map("infrastructure_logs")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model InfrastructureMetric {
+  id          BigInt   @id @default(autoincrement())
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  serverId    String?  @default("") @map("server_id")
+  status      String?  @default("")
+  cpuUsage    Float?   @map("cpu_usage")
+  memoryUsage Float?   @map("memory_usage")
+  diskIo      Float?   @map("disk_io")
+
+  @@map("infrastructure_metrics")
 }
