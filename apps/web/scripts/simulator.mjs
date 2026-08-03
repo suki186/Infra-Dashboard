@@ -13,8 +13,11 @@
 
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-dotenv.config({ path: '.env.local' })
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(__dirname, '../.env.local') })
 
 // ─── Supabase 클라이언트 초기화 ───────────────────────────────────────────────
 const { NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: SUPABASE_KEY } = process.env
