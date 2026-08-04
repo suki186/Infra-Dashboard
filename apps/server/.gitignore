@@ -1,0 +1,4 @@
+# Server-specific ignores (common items are in root .gitignore)
+
+# prisma generated client (if output path is ever customized away from node_modules)
+/prisma/generated
