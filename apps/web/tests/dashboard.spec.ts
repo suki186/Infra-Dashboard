@@ -17,9 +17,9 @@ import type { ServerMetric, LogEntry, WSMessage } from '@infra-dashboard/shared'
 // (apps/server/src — packages/shared의 WSMessage). 클라이언트→서버 메시지가 없으므로
 // onMessage 처리도, phx_join류 ack도 필요 없다.
 //
-// 컴포넌트마다(page.tsx, useChartPaint, LogTerminal) 독립적으로 useServerSocket()을
-// 호출해 각자 별도 연결을 여는 구조이므로, 하나의 injectMetric/injectLog 호출이
-// 열려 있는 모든 연결에 브로드캐스트되어야 실제 서버 동작과 동일하다.
+// 연결은 앱 최상위(RealtimeSocketProvider → useRealtimeStore.connectSocket())에서
+// 단 하나만 열린다. sockets 배열에 대한 브로드캐스트는 여러 연결을 지원하기 위한
+// 범용 구현이지만, 실제로는 항상 단일 소켓에만 전달된다.
 // ─────────────────────────────────────────────────────────────────────────────
 async function setupServerSocketMock(page: Page) {
   const sockets: Parameters<Parameters<Page['routeWebSocket']>[1]>[0][] = []
@@ -104,7 +104,7 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
 
     await gotoAndWaitReady(page)
 
-    // 폴링 주입: React useServerSocket 의 message 리스너가 아직 미등록인 경우 재주입으로 수렴
+    // 폴링 주입: useRealtimeStore 의 message 리스너가 아직 미등록인 경우 재주입으로 수렴
     // infrastructureHelpers.ts: maxCpu >= 90 → risk = { label: '위험', color: 'text-red-400' }
     await expect(async () => {
       mock.injectMetric({
@@ -130,7 +130,7 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
 
     await gotoAndWaitReady(page)
 
-    // 폴링 주입: LogTerminal 의 useServerSocket message 리스너가 미등록인 경우 재주입으로 수렴
+    // 폴링 주입: useRealtimeStore 의 message 리스너가 미등록인 경우 재주입으로 수렴
     // LogTerminal 최외곽 컨테이너: div.bg-slate-950.rounded-xl (Sidebar <aside>와 구별)
     await expect(async () => {
       mock.injectLog({

@@ -1,8 +1,7 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { useServerSocket } from '@/src/hooks/useServerSocket'
-import type { MetricsMap } from '@/src/config/infrastructure'
+import { useRef } from 'react'
+import { useRealtimeStore } from '@/src/store/useRealtimeStore'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
 import { LogTerminal } from '@/src/components/dashboard/LogTerminal'
@@ -10,29 +9,13 @@ import type { LogTerminalHandle } from '@/src/types/terminal'
 import PulseDoctor from '@/src/components/chatbot/PulseDoctor'
 
 export default function DashboardPage() {
-  const [metrics, setMetrics]         = useState<MetricsMap>({})
-  const [lastUpdated, setLastUpdated] = useState<string>('—')
+  // ─── 공유 WebSocket 스토어 구독 (연결은 RealtimeSocketProvider가 앱 최상위에서 1회만 연다) ──
+  const metrics     = useRealtimeStore(state => state.metrics)
+  const lastUpdated = useRealtimeStore(state => state.lastUpdated)
 
   // logTerminalRef : RefObject이므로 state 가 아님 → metrics 갱신이 PulseDoctor 를 깨워도
   //                  이 ref 를 타고 로그를 읽는 것은 추가 re-render 없이 수행된다.
   const logTerminalRef = useRef<LogTerminalHandle>(null)
-
-  // ─── WebSocket 서버(apps/server) 구독 ────────────────────────────────────
-  useServerSocket({
-    onMetric: (metric) => {
-      setMetrics(prev => ({
-        ...prev,
-        [metric.serverId]: {
-          server_id:    metric.serverId,
-          status:       metric.status,
-          cpu_usage:    metric.cpuUsage,
-          memory_usage: metric.memoryUsage,
-          disk_io:      metric.diskIo,
-        },
-      }))
-      setLastUpdated(new Date().toLocaleTimeString('ko-KR'))
-    },
-  })
 
   // ─── 파생 상태 ───────────────────────────────────────────────────────────
   const { serverCount, avgCpu, risk, alertCount, onlineCount } = deriveStats(metrics)

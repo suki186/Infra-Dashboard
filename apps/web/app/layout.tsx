@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Sidebar from '@/src/components/common/Sidebar'
 import QueryProvider from '@/src/components/common/QueryProvider'
+import RealtimeSocketProvider from '@/src/components/common/RealtimeSocketProvider'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -32,6 +33,7 @@ export default function RootLayout({
       {/* h-full: */}
       <body className="h-full flex bg-slate-900 text-slate-100 antialiased overflow-hidden">
         <QueryProvider>
+          <RealtimeSocketProvider />
           <Sidebar />
           {/* overflow-hidden */}
           <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-900">
