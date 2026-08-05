@@ -7,7 +7,6 @@ import {
   LineController, Title, Tooltip, Legend,
   type Scale,
 } from 'chart.js'
-import { useServerSocket } from '@/src/hooks/useServerSocket'
 import { SERVER_STYLES, SERVER_IDS } from '@/src/config/infrastructure'
 import { useMetricsHistory, type HistoryPoint } from '@/src/hooks/useMetricsHistory'
 import { useRealtimeStore, type RealtimeSlot } from '@/src/store/useRealtimeStore'
@@ -88,19 +87,8 @@ export function useChartPaint() {
   }, [])
 
   // ─── 데이터 소스: WebSocket 서버(apps/server) 구독 ──────────────────────────
-  useServerSocket({
-    enabled: !MOCK_MODE,
-    onMetric: (metric) => {
-      if (!SERVER_STYLES[metric.serverId]) return
-      useRealtimeStore.getState().ingest({
-        server_id:    metric.serverId,
-        status:       metric.status,
-        cpu_usage:    metric.cpuUsage,
-        memory_usage: metric.memoryUsage,
-        disk_io:      metric.diskIo,
-      })
-    },
-  })
+  // 연결 자체와 metrics → slots 집계는 useRealtimeStore가 앱 최상위에서 이미 수행한다
+  // (RealtimeSocketProvider) — 여기서는 아래 구독으로 결과 슬롯만 읽는다.
 
   // ─── Zustand 구독 — 리렌더링 없이 실시간 슬롯 미러링 ────────────────────────
   // useRealtimeStore() React hook 대신 subscribe()를 사용해

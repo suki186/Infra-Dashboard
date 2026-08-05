@@ -1,16 +1,15 @@
 'use client'
 
 // ─── LogTerminal — 실시간 시스템 로그 터미널 뷰 ───────────────────────────────
-// apps/server WebSocket(/ws)의 log 메시지를 구독하여
-// 리눅스 터미널 감성의 UI로 스트리밍 출력한다.
+// apps/server WebSocket(/ws)의 log 메시지를 공유 스토어(useRealtimeStore)에서
+// 구독하여 리눅스 터미널 감성의 UI로 스트리밍 출력한다.
+// 연결 자체는 앱 최상위(RealtimeSocketProvider)에서 1회만 열리고 공유된다.
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { useServerSocket } from '@/src/hooks/useServerSocket'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { useRealtimeStore, MAX_LOGS } from '@/src/store/useRealtimeStore'
 import type { LogTerminalHandle, LogLevel, LogEntry } from '@/src/types/terminal'
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────────
-const MAX_LOGS = 100
-
 const LEVEL_BADGE: Record<LogLevel, string> = {
   INFO:  'text-emerald-400',
   WARN:  'text-yellow-400',
@@ -43,45 +42,23 @@ function formatLogLine(e: LogEntry): string {
 // ─── 컴포넌트 ─────────────────────────────────────────────────────────────────
 export const LogTerminal = forwardRef<LogTerminalHandle, object>(
   function LogTerminal(_, ref) {
-    // 로그 데이터 배열 — useState 가 아닌 useRef 로 관리
-    // React 조정자를 깨우지 않고 직접 mutation 으로 누적한다.
-    const logsRef      = useRef<LogEntry[]>([])
-    const scrollRef    = useRef<HTMLDivElement>(null)
-    const nextIdRef    = useRef(1)        // 서버가 id를 내려주지 않으므로 클라이언트에서 채번
-    const [tick, setTick] = useState(0)   // 렌더 트리거 전용
+    const scrollRef = useRef<HTMLDivElement>(null)
+
+    // 공유 스토어에서 로그 배열만 구독 — 연결 자체는 앱 최상위(RealtimeSocketProvider)에서 이미 열려 있다.
+    const logs = useRealtimeStore(state => state.logs)
 
     // ─── 외부 핸들 노출 ────────────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       getRecentLogs: (n = 10) =>
-        logsRef.current.slice(-n).map(formatLogLine),
+        useRealtimeStore.getState().logs.slice(-n).map(formatLogLine),
     }))
-
-    // ─── WebSocket 서버(apps/server) 구독 ────────────────────────────────────
-    useServerSocket({
-      onLog: (log) => {
-        const entry: LogEntry = {
-          id:         nextIdRef.current++,
-          created_at: log.createdAt,
-          server_id:  log.serverId,
-          level:      log.level,
-          message:    log.message,
-        }
-        const logs = logsRef.current
-        logs.push(entry)
-        // 메모리 보호 — MAX_LOGS 초과분 앞에서 제거
-        if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS)
-        setTick(t => t + 1)
-      },
-    })
 
     // ─── 자동 스크롤 — smooth 미사용 (로그 급증 시 janky 방지) ──────────────
     useEffect(() => {
       if (scrollRef.current) {
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight
       }
-    }, [tick])
-
-    const logs = logsRef.current
+    }, [logs.length])
 
     return (
       <div className="shrink-0 rounded-xl overflow-hidden border border-slate-700/60 bg-slate-950">
