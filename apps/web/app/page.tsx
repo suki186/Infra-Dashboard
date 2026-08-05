@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { supabase } from '@/src/utils/supabase'
-import type { MetricsMap, ServerMetric } from '@/src/config/infrastructure'
+import { useRef, useState } from 'react'
+import { useServerSocket } from '@/src/hooks/useServerSocket'
+import type { MetricsMap } from '@/src/config/infrastructure'
 import { deriveStats, systemStatusLabel } from '@/src/utils/infrastructureHelpers'
 import RealtimeChart from '@/src/components/dashboard/RealtimeChart'
 import { LogTerminal } from '@/src/components/dashboard/LogTerminal'
@@ -17,27 +17,22 @@ export default function DashboardPage() {
   //                  이 ref 를 타고 로그를 읽는 것은 추가 re-render 없이 수행된다.
   const logTerminalRef = useRef<LogTerminalHandle>(null)
 
-  // ─── Supabase Realtime 구독 ─────────────────────────────────────────────
-  useEffect(() => {
-    const channel = supabase
-      .channel('infrastructure_metrics_feed')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'infrastructure_metrics' },
-        (payload) => {
-          const row = payload.new as ServerMetric
-          setMetrics(prev => ({ ...prev, [row.server_id]: row }))
-          setLastUpdated(new Date().toLocaleTimeString('ko-KR'))
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('📡 Supabase 실시간 채널 연결 성공!')
-        }
-      })
-
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+  // ─── WebSocket 서버(apps/server) 구독 ────────────────────────────────────
+  useServerSocket({
+    onMetric: (metric) => {
+      setMetrics(prev => ({
+        ...prev,
+        [metric.serverId]: {
+          server_id:    metric.serverId,
+          status:       metric.status,
+          cpu_usage:    metric.cpuUsage,
+          memory_usage: metric.memoryUsage,
+          disk_io:      metric.diskIo,
+        },
+      }))
+      setLastUpdated(new Date().toLocaleTimeString('ko-KR'))
+    },
+  })
 
   // ─── 파생 상태 ───────────────────────────────────────────────────────────
   const { serverCount, avgCpu, risk, alertCount, onlineCount } = deriveStats(metrics)

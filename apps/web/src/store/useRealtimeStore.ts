@@ -1,5 +1,8 @@
 // ─── useRealtimeStore — 실시간 WebSocket/Supabase 메트릭 Zustand 스토어 ────────
-// Supabase Realtime(또는 Mock) 이벤트를 10초 단위 슬롯으로 집계한다.
+// WebSocket(또는 Mock) 이벤트를 1초 단위 슬롯으로 집계한다.
+// apps/server 브로드캐스터가 서버당 ~1초 간격으로 메시지를 보내므로,
+// 슬롯 폭을 브로드캐스트 주기와 맞춰야 매 틱마다 새 컬럼이 찍힌다
+// (10초로 묶으면 같은 슬롯을 계속 덮어써 차트가 9틱 동안 멈춰있다 한 번에 점프하는 것처럼 보인다).
 // RealtimeChart가 subscribe()로 ref에 미러링하여 리렌더링 없이 페인트 타이머에 주입.
 
 import { create } from 'zustand'
@@ -15,16 +18,16 @@ export type RealtimeServerSnap = {
 }
 
 export type RealtimeSlot = {
-  timestamp: string                            // ISO 8601, 10초 경계로 floor
+  timestamp: string                            // ISO 8601, 1초 경계로 floor
   servers:   Record<string, RealtimeServerSnap>
 }
 
 // ─── 내부 상수 ───────────────────────────────────────────────────────────────
 
-const MAX_SLOTS = 300   // 50분치 (10초 × 300)
-const SLOT_MS   = 10_000
+const MAX_SLOTS = 300   // 5분치 (1초 × 300)
+const SLOT_MS   = 1_000
 
-/** 현재 시각을 10초 단위 ISO 타임스탬프로 변환 */
+/** 현재 시각을 1초 단위 ISO 타임스탬프로 변환 */
 function floorToSlotISO(nowMs: number): string {
   return new Date(Math.floor(nowMs / SLOT_MS) * SLOT_MS).toISOString()
 }
@@ -33,7 +36,7 @@ function floorToSlotISO(nowMs: number): string {
 
 type RealtimeStore = {
   slots:  RealtimeSlot[]
-  /** Supabase INSERT 이벤트 1건을 해당 시각 슬롯에 집계 */
+  /** WebSocket metrics 메시지 1건을 해당 시각 슬롯에 집계 */
   ingest: (metric: ServerMetric) => void
 }
 

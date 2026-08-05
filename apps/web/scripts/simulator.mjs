@@ -1,33 +1,29 @@
 // ─── PulseOps 시뮬레이터 ──────────────────────────────────────────────────────
-// 사용 전 Supabase SQL Editor에서 아래 마이그레이션을 1회 실행하세요:
-//
-//   CREATE TABLE IF NOT EXISTS infrastructure_logs (
-//     id         bigserial    PRIMARY KEY,
-//     created_at timestamptz  NOT NULL DEFAULT now(),
-//     server_id  text         NOT NULL,
-//     level      text         NOT NULL,
-//     message    text         NOT NULL
-//   );
-//   ALTER TABLE infrastructure_logs REPLICA IDENTITY FULL;
-//   ALTER PUBLICATION supabase_realtime ADD TABLE infrastructure_logs;
+// apps/server REST API(POST /api/metrics, POST /api/logs)로 데이터를 전송한다.
+// 서버는 npm run dev:server (기본 http://localhost:3001)로 미리 기동되어 있어야 한다.
 
 import dotenv from 'dotenv'
-import { createClient } from '@supabase/supabase-js'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') })
 
-// ─── Supabase 클라이언트 초기화 ───────────────────────────────────────────────
-const { NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY: SUPABASE_KEY } = process.env
+// ─── apps/server 연결 설정 ────────────────────────────────────────────────────
+const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3001'
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('❌ .env.local 에서 Supabase 환경 변수를 읽지 못했습니다.')
-  process.exit(1)
+async function postJSON(pathname, body) {
+  const res = await fetch(`${SERVER_URL}${pathname}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status} ${text}`)
+  }
+  return res.json()
 }
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ─── 가상 서버 정의 ───────────────────────────────────────────────────────────
 const SERVERS = [
@@ -248,7 +244,11 @@ setInterval(async () => {
   const now         = Date.now()
   const allMetrics  = SERVERS.map(s => generateMetrics(s, now))
   const metricRows  = allMetrics.map(({ server_id, status, cpu_usage, memory_usage, disk_io }) => ({
-    server_id, status, cpu_usage, memory_usage, disk_io,
+    serverId:    server_id,
+    status,
+    cpuUsage:    cpu_usage,
+    memoryUsage: memory_usage,
+    diskIo:      disk_io,
   }))
 
   // 각 서버의 실제 CPU 값을 기반으로 로그 생성
@@ -257,6 +257,7 @@ setInterval(async () => {
     const entries = generateLogs(SERVERS[i], allMetrics[i])
     logRows.push(...entries)
   }
+  const logBodies = logRows.map(({ server_id, level, message }) => ({ serverId: server_id, level, message }))
 
   txCount++
   process.stdout.write(
@@ -266,25 +267,25 @@ setInterval(async () => {
     `  logs: ${C.yellow}${String(logRows.length).padStart(2)}${C.reset}`
   )
 
-  // 메트릭 INSERT
-  const { error: metricsErr } = await supabase
-    .from('infrastructure_metrics')
-    .insert(metricRows)
-
+  // 메트릭 전송 — apps/server는 단건 POST만 받으므로 서버별로 요청
+  const metricResults = await Promise.allSettled(
+    metricRows.map(row => postJSON('/api/metrics', row))
+  )
+  const metricsErr = metricResults.find(r => r.status === 'rejected')
   if (metricsErr) {
     process.stdout.write('\n')
-    console.log(`${C.bold}${C.red}❌ [METRICS ERROR]${C.reset}  ${C.red}${metricsErr.message}${C.reset}`)
+    console.log(`${C.bold}${C.red}❌ [METRICS ERROR]${C.reset}  ${C.red}${metricsErr.reason.message}${C.reset}`)
   }
 
-  // 로그 INSERT (로그 없는 틱도 있으므로 빈 배열 체크)
-  if (logRows.length > 0) {
-    const { error: logsErr } = await supabase
-      .from('infrastructure_logs')
-      .insert(logRows)
-
+  // 로그 전송 (로그 없는 틱도 있으므로 빈 배열 체크)
+  if (logBodies.length > 0) {
+    const logResults = await Promise.allSettled(
+      logBodies.map(row => postJSON('/api/logs', row))
+    )
+    const logsErr = logResults.find(r => r.status === 'rejected')
     if (logsErr) {
       process.stdout.write('\n')
-      console.log(`${C.bold}${C.yellow}⚠️  [LOG ERROR]${C.reset}  ${C.yellow}${logsErr.message}${C.reset}`)
+      console.log(`${C.bold}${C.yellow}⚠️  [LOG ERROR]${C.reset}  ${C.yellow}${logsErr.reason.message}${C.reset}`)
     }
   }
 }, 1_000)

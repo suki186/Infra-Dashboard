@@ -7,7 +7,7 @@ import {
   LineController, Title, Tooltip, Legend,
   type Scale,
 } from 'chart.js'
-import { supabase } from '@/src/utils/supabase'
+import { useServerSocket } from '@/src/hooks/useServerSocket'
 import { SERVER_STYLES, SERVER_IDS } from '@/src/config/infrastructure'
 import { useMetricsHistory, type HistoryPoint } from '@/src/hooks/useMetricsHistory'
 import { useRealtimeStore, type RealtimeSlot } from '@/src/store/useRealtimeStore'
@@ -73,34 +73,34 @@ export function useChartPaint() {
   // Y축 동적 스케일: LERP 보간 중간값을 틱 간에 보존.
   const yScaleRef = useRef({ min: 0, max: 100 })
 
-  // ─── 데이터 소스: Supabase 구독 또는 Mock 루프 ──────────────────────────────
+  // ─── 데이터 소스: Mock 루프 ──────────────────────────────────────────────────
   useEffect(() => {
+    if (!MOCK_MODE) return
+
     const { ingest } = useRealtimeStore.getState()
-
-    if (MOCK_MODE) {
-      const timer = setInterval(() => {
-        const nowMs = Date.now()
-        for (const { id, cpu_base, phase } of MOCK_SERVERS) {
-          ingest(generateMockMetric(id, cpu_base, phase, nowMs))
-        }
-      }, MOCK_INTERVAL_MS)
-      return () => clearInterval(timer)
-    }
-
-    const channel = supabase
-      .channel('realtime_chart_feed')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'infrastructure_metrics' },
-        (payload) => {
-          const row = payload.new as Parameters<typeof ingest>[0]
-          if (!SERVER_STYLES[row.server_id]) return
-          ingest(row)
-        },
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+    const timer = setInterval(() => {
+      const nowMs = Date.now()
+      for (const { id, cpu_base, phase } of MOCK_SERVERS) {
+        ingest(generateMockMetric(id, cpu_base, phase, nowMs))
+      }
+    }, MOCK_INTERVAL_MS)
+    return () => clearInterval(timer)
   }, [])
+
+  // ─── 데이터 소스: WebSocket 서버(apps/server) 구독 ──────────────────────────
+  useServerSocket({
+    enabled: !MOCK_MODE,
+    onMetric: (metric) => {
+      if (!SERVER_STYLES[metric.serverId]) return
+      useRealtimeStore.getState().ingest({
+        server_id:    metric.serverId,
+        status:       metric.status,
+        cpu_usage:    metric.cpuUsage,
+        memory_usage: metric.memoryUsage,
+        disk_io:      metric.diskIo,
+      })
+    },
+  })
 
   // ─── Zustand 구독 — 리렌더링 없이 실시간 슬롯 미러링 ────────────────────────
   // useRealtimeStore() React hook 대신 subscribe()를 사용해
