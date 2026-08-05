@@ -7,7 +7,7 @@
 | 앱 | 설명 |
 |----|------|
 | [apps/web](./apps/web/README.md) | Next.js 프론트엔드 — 인프라 실시간 대시보드 |
-| [apps/server](./apps/server/) | Fastify 백엔드 — WebSocket 및 API 서버 (개발 예정) |
+| [apps/server](./apps/server/) | Fastify 백엔드 — WebSocket 및 API 서버 |
 
 ## Packages
 
