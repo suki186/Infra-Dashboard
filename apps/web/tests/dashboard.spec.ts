@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import type { ServerMetric, LogEntry, WSMessage } from '@infra-dashboard/shared'
 
 /**
  * PulseOps 대시보드 — E2E 검증
@@ -9,144 +10,39 @@ import { test, expect, type Page } from '@playwright/test'
  * Race Condition을 근본 해소한다 — 리스너 미등록 시 자동 재주입·재단언으로 수렴.
  */
 
-// ── Supabase Realtime Phoenix 프로토콜 Mock ─────────────────────────────────
+// ── apps/server WebSocket(/ws) Mock ─────────────────────────────────────────
 //
-// @supabase/phoenix 의 Serializer (phoenix/serializer.js) 는 모든 메시지를
-// JSON 배열 형식으로 인코딩/디코딩한다:
+// 프론트는 ws://localhost:3001/ws 에 연결하고, 별도 핸드셰이크 없이
+// 서버가 보내는 {type: 'metrics'|'log', payload: {...}} JSON 메시지를 그대로 수신한다
+// (apps/server/src — packages/shared의 WSMessage). 클라이언트→서버 메시지가 없으므로
+// onMessage 처리도, phx_join류 ack도 필요 없다.
 //
+// 컴포넌트마다(page.tsx, useChartPaint, LogTerminal) 독립적으로 useServerSocket()을
+// 호출해 각자 별도 연결을 여는 구조이므로, 하나의 injectMetric/injectLog 호출이
+// 열려 있는 모든 연결에 브로드캐스트되어야 실제 서버 동작과 동일하다.
 // ─────────────────────────────────────────────────────────────────────────────
-async function setupRealtimeMock(page: Page) {
-  // Phoenix topic → { joinRef, subIds }
-  const topicState     = new Map<string, { joinRef: string; subIds: number[] }>()
-  // topic → resolve 함수 (phx_join ack 전송 완료 후 호출)
-  const topicResolvers = new Map<string, () => void>()
-  const topicPromises  = new Map<string, Promise<void>>()
-  let   sendFn: ((msg: string) => void) | null = null
-  let   subIdCounter = 100
+async function setupServerSocketMock(page: Page) {
+  const sockets: Parameters<Parameters<Page['routeWebSocket']>[1]>[0][] = []
 
-  // phx_join ack(phx_reply) 전송이 완료될 때까지 대기하는 Promise
-  function channelReady(topic: string): Promise<void> {
-    if (topicState.has(topic)) return Promise.resolve()
-    if (!topicPromises.has(topic)) {
-      topicPromises.set(
-        topic,
-        new Promise<void>(res => topicResolvers.set(topic, res)),
-      )
-    }
-    return topicPromises.get(topic)!
-  }
-
-  // 프로젝트 ID를 하드코딩하지 않음 — CI env(mock-project)와 로컬 env 모두 매칭
-  await page.routeWebSocket(/\.supabase\.co\/realtime/, ws => {
-    sendFn = (msg: string) => ws.send(msg)
-
-    ws.onMessage(raw => {
-      // ── 핵심 수정: 배열 형식으로 구조 분해 ───────────────────────────────
-      // 브라우저 → 서버 메시지: [join_ref, ref, topic, event, payload]
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let join_ref: string | null, ref: string | null, topic: string, event: string, payload: any
-      try {
-        ;[join_ref, ref, topic, event, payload] = JSON.parse(
-          typeof raw === 'string' ? raw : (raw as Buffer).toString('utf-8'),
-        )
-      } catch {
-        return
-      }
-
-      // ── Heartbeat ─────────────────────────────────────────────────────────
-      // 브라우저: [null, ref, "phoenix", "heartbeat", {}]
-      // 서버 응답: [null, ref, "phoenix", "phx_reply", {status:"ok"}]
-      if (event === 'heartbeat') {
-        ws.send(JSON.stringify([null, ref, 'phoenix', 'phx_reply', { status: 'ok', response: {} }]))
-        return
-      }
-
-      // ── Channel Join ──────────────────────────────────────────────────────
-      // 브라우저: [join_ref, ref, topic, "phx_join", {config:{postgres_changes:[...]}}]
-      // 서버 ack: [join_ref, ref, topic, "phx_reply", {status:"ok", response:{postgres_changes:[{id,event}]}}]
-      // 순서 보장: send() 완료 → topicState 저장 → resolver 호출
-      // (resolver 호출 전에 phx_reply 가 버퍼에 들어가야 postgres_changes 보다 먼저 처리됨)
-      if (event === 'phx_join') {
-        const pgFilters: Array<{ event: string; schema?: string; table?: string; filter?: string }> =
-          payload?.config?.postgres_changes ?? []
-        const subIds = pgFilters.map(() => ++subIdCounter)
-
-        // ① phx_reply 먼저 전송 (브라우저 수신 큐에 먼저 삽입)
-        //
-        // _updatePostgresBindings() 가 serverFilter.schema / .table / .filter 을
-        // clientFilter 와 isFilterValueEqual() 로 비교한다. 불일치 시 unsubscribe() 가 호출되므로
-        // phx_join payload 의 postgres_changes 필터를 그대로 에코백해야 한다.
-        ws.send(JSON.stringify([
-          join_ref, ref, topic, 'phx_reply',
-          {
-            status:   'ok',
-            response: {
-              postgres_changes: subIds.map((id, i) => ({
-                id,
-                event:  pgFilters[i]?.event  ?? 'INSERT',
-                schema: pgFilters[i]?.schema,
-                table:  pgFilters[i]?.table,
-                filter: pgFilters[i]?.filter,
-              })),
-            },
-          },
-        ]))
-
-        // ② topicState 저장 후 channelReady() 해제
-        // JS 싱글 스레드: 이 시점의 Promise 속행은 현재 동기 코드 완료 후 마이크로태스크로 예약됨
-        // → phx_reply 가 postgres_changes 보다 반드시 먼저 브라우저 큐에 들어가는 것 보장
-        topicState.set(topic, { joinRef: join_ref ?? ref ?? '', subIds })
-        topicResolvers.get(topic)?.()
-        return
-      }
-
-      // ── Channel Leave ─────────────────────────────────────────────────────
-      if (event === 'phx_leave') {
-        ws.send(JSON.stringify([join_ref, ref, topic, 'phx_reply', { status: 'ok', response: {} }]))
-      }
+  await page.routeWebSocket(/localhost:3001\/ws/, ws => {
+    sockets.push(ws)
+    ws.onClose(() => {
+      const idx = sockets.indexOf(ws)
+      if (idx >= 0) sockets.splice(idx, 1)
     })
   })
 
-  // ─── postgres_changes INSERT 이벤트 전송 ────────────────────────────────
-  // 서버 → 브라우저: [join_ref, null, topic, "postgres_changes", {ids:[subId], data:{...}}]
-  //
-  // supabase-realtime-js _getPayloadRecords():
-  //   payload.data.type === 'INSERT' → records.new = convertChangeData(columns, record)
-  //   columns:[] 이면 noop(value) 로 원시값 그대로 통과
-  function sendPgInsert(topic: string, table: string, schema: string, record: object) {
-    const state = topicState.get(topic)
-    if (!sendFn || !state) return
-    sendFn(JSON.stringify([
-      state.joinRef, null, topic, 'postgres_changes',
-      {
-        data: {
-          type:             'INSERT',
-          schema,
-          table,
-          commit_timestamp: new Date().toISOString(),
-          errors:           null,
-          record,
-          old_record:       {},
-          columns:          [],
-        },
-        ids: state.subIds,
-      },
-    ]))
+  function broadcast(message: WSMessage) {
+    const raw = JSON.stringify(message)
+    for (const ws of sockets) ws.send(raw)
   }
 
   return {
-    // page.tsx: supabase.channel('infrastructure_metrics_feed')
-    async injectMetric(record: object) {
-      await channelReady('realtime:infrastructure_metrics_feed')
-      // 폴링 주입 패턴에서는 toPass() 재시도가 타이밍을 보완하므로 최소 마진만 유지
-      await page.waitForTimeout(200)
-      sendPgInsert('realtime:infrastructure_metrics_feed', 'infrastructure_metrics', 'public', record)
+    injectMetric(payload: ServerMetric) {
+      broadcast({ type: 'metrics', payload })
     },
-    // LogTerminal.tsx: supabase.channel('infrastructure_logs_feed')
-    async injectLog(record: object) {
-      await channelReady('realtime:infrastructure_logs_feed')
-      await page.waitForTimeout(200)
-      sendPgInsert('realtime:infrastructure_logs_feed', 'infrastructure_logs', 'public', record)
+    injectLog(payload: LogEntry) {
+      broadcast({ type: 'log', payload })
     },
   }
 }
@@ -156,7 +52,7 @@ async function setupRealtimeMock(page: Page) {
 // ── 공통 헬퍼 ────────────────────────────────────────────────────────────────
 // WebSocket 기반 실시간 앱은 네트워크가 항상 활성이므로 'networkidle'은 영원히 성립하지 않음.
 // 대신 페이지가 실제로 사용 가능한 시점을 나타내는 고정 UI 요소(요약 카드)의 가시성으로 판단한다.
-// page.tsx — 요약 카드는 Supabase 연결 여부와 무관하게 항상 렌더링된다
+// page.tsx — 요약 카드는 WebSocket 연결 여부와 무관하게 항상 렌더링된다
 async function gotoAndWaitReady(page: Page) {
   await page.goto('/')
   await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
@@ -200,23 +96,24 @@ test.describe('PulseOps 대시보드 핵심 컴포넌트 노출', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
   // TC-05: 장애 주입 후 차트 위험 상태 변이 검증 ──────────────────────────────
-  // infrastructure_metrics_feed 채널로 CPU 99% INSERT 이벤트를 주입
+  // metrics 메시지로 CPU 99% 를 주입
   // → page.tsx setMetrics() → deriveStats() → risk.color = 'text-red-400'
   // → 시스템 위험도 카드 value span 의 클래스가 text-red-400 으로 변이되는지 검증
   test('TC-05: CPU 99% 메트릭 WebSocket 주입 후 위험도 카드가 text-red-400 상태로 변이된다', async ({ page }) => {
-    const mock = await setupRealtimeMock(page)
+    const mock = await setupServerSocketMock(page)
 
     await gotoAndWaitReady(page)
 
-    // 폴링 주입: React .subscribe() 리스너가 아직 미등록인 경우 재주입으로 수렴
+    // 폴링 주입: React useServerSocket 의 message 리스너가 아직 미등록인 경우 재주입으로 수렴
     // infrastructureHelpers.ts: maxCpu >= 90 → risk = { label: '위험', color: 'text-red-400' }
     await expect(async () => {
-      await mock.injectMetric({
-        server_id:    'kr-seoul-web-01',
-        status:       'ONLINE',
-        cpu_usage:    99,
-        memory_usage: 88,
-        disk_io:      97,
+      mock.injectMetric({
+        serverId:    'kr-seoul-web-01',
+        status:      'ONLINE',
+        cpuUsage:    99,
+        memoryUsage: 88,
+        diskIo:      97,
+        createdAt:   new Date().toISOString(),
       })
       await expect(
         page.locator('span.text-red-400').filter({ hasText: '위험' })
@@ -225,23 +122,22 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
   })
 
   // TC-06: 시스템 에러 로그 터미널 인입 검증 ────────────────────────────────
-  // infrastructure_logs_feed 채널로 CRITICAL ERROR INSERT 이벤트를 주입
+  // log 메시지로 CRITICAL ERROR 를 주입
   // → LogTerminal logsRef 에 누적 → setTick() 리렌더 트리거
   // → 전체 페이지 리렌더 없이 터미널 바디 텍스트만 갱신됨을 검증
   test('TC-06: 로그 WebSocket 주입 후 터미널에 CRITICAL ERROR 패킷이 실시간 인입된다', async ({ page }) => {
-    const mock = await setupRealtimeMock(page)
+    const mock = await setupServerSocketMock(page)
 
     await gotoAndWaitReady(page)
 
-    // 폴링 주입: LogTerminal .subscribe() 리스너가 미등록인 경우 재주입으로 수렴
+    // 폴링 주입: LogTerminal 의 useServerSocket message 리스너가 미등록인 경우 재주입으로 수렴
     // LogTerminal 최외곽 컨테이너: div.bg-slate-950.rounded-xl (Sidebar <aside>와 구별)
     await expect(async () => {
-      await mock.injectLog({
-        id:         1,
-        created_at: new Date().toISOString(),
-        server_id:  'kr-seoul-web-01',
-        level:      'ERROR',
-        message:    '[CRITICAL ERROR] CPU OVERLOAD: 99% — 즉각 조치 필요',
+      mock.injectLog({
+        serverId:  'kr-seoul-web-01',
+        level:     'ERROR',
+        message:   '[CRITICAL ERROR] CPU OVERLOAD: 99% — 즉각 조치 필요',
+        createdAt: new Date().toISOString(),
       })
       await expect(
         page.locator('div.bg-slate-950.rounded-xl')
@@ -264,19 +160,20 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
       }),
     )
 
-    const mock = await setupRealtimeMock(page)
+    const mock = await setupServerSocketMock(page)
 
     await gotoAndWaitReady(page)
 
     // Phase 1 — 폴링 주입: 메트릭 수신 → hasData=true → 챗봇 입력창 활성화 확인
     // usePulseDoctor: hasData = Object.keys(metrics).length > 0 → input[disabled] 제거
     await expect(async () => {
-      await mock.injectMetric({
-        server_id:    'kr-seoul-web-01',
-        status:       'ONLINE',
-        cpu_usage:    99,
-        memory_usage: 88,
-        disk_io:      97,
+      mock.injectMetric({
+        serverId:    'kr-seoul-web-01',
+        status:      'ONLINE',
+        cpuUsage:    99,
+        memoryUsage: 88,
+        diskIo:      97,
+        createdAt:   new Date().toISOString(),
       })
       await expect(
         page.locator('input[type="text"]')

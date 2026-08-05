@@ -1,11 +1,11 @@
 'use client'
 
 // ─── LogTerminal — 실시간 시스템 로그 터미널 뷰 ───────────────────────────────
-// Supabase infrastructure_logs 테이블 INSERT 이벤트를 구독하여
+// apps/server WebSocket(/ws)의 log 메시지를 구독하여
 // 리눅스 터미널 감성의 UI로 스트리밍 출력한다.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { supabase } from '@/src/utils/supabase'
+import { useServerSocket } from '@/src/hooks/useServerSocket'
 import type { LogTerminalHandle, LogLevel, LogEntry } from '@/src/types/terminal'
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────────
@@ -47,6 +47,7 @@ export const LogTerminal = forwardRef<LogTerminalHandle, object>(
     // React 조정자를 깨우지 않고 직접 mutation 으로 누적한다.
     const logsRef      = useRef<LogEntry[]>([])
     const scrollRef    = useRef<HTMLDivElement>(null)
+    const nextIdRef    = useRef(1)        // 서버가 id를 내려주지 않으므로 클라이언트에서 채번
     const [tick, setTick] = useState(0)   // 렌더 트리거 전용
 
     // ─── 외부 핸들 노출 ────────────────────────────────────────────────────
@@ -55,26 +56,23 @@ export const LogTerminal = forwardRef<LogTerminalHandle, object>(
         logsRef.current.slice(-n).map(formatLogLine),
     }))
 
-    // ─── Supabase Realtime 구독 ───────────────────────────────────────────
-    useEffect(() => {
-      const channel = supabase
-        .channel('infrastructure_logs_feed')
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'infrastructure_logs' },
-          ({ new: row }) => {
-            const entry = row as LogEntry
-            const logs  = logsRef.current
-            logs.push(entry)
-            // 메모리 보호 — MAX_LOGS 초과분 앞에서 제거
-            if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS)
-            setTick(t => t + 1)
-          }
-        )
-        .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
-    }, [])
+    // ─── WebSocket 서버(apps/server) 구독 ────────────────────────────────────
+    useServerSocket({
+      onLog: (log) => {
+        const entry: LogEntry = {
+          id:         nextIdRef.current++,
+          created_at: log.createdAt,
+          server_id:  log.serverId,
+          level:      log.level,
+          message:    log.message,
+        }
+        const logs = logsRef.current
+        logs.push(entry)
+        // 메모리 보호 — MAX_LOGS 초과분 앞에서 제거
+        if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS)
+        setTick(t => t + 1)
+      },
+    })
 
     // ─── 자동 스크롤 — smooth 미사용 (로그 급증 시 janky 방지) ──────────────
     useEffect(() => {
