@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import websocketPlugin from '@fastify/websocket';
 import { prisma } from './db/client';
 import type { ServerMetric } from '@infra-dashboard/shared';
@@ -11,6 +12,12 @@ import { registerHistoryRoutes } from './routes/history';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
+
+const DEV_ORIGIN = 'http://localhost:3000';
+const ALLOWED_ORIGINS = [
+  DEV_ORIGIN,
+  ...(process.env.ALLOWED_ORIGIN?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? []),
+];
 
 const app = Fastify({ logger: true });
 
@@ -50,6 +57,8 @@ app.get('/health/shared-types', async () => {
 });
 
 async function main(): Promise<void> {
+  await app.register(cors, { origin: ALLOWED_ORIGINS });
+
   // @fastify/websocket must finish registering before routes that use
   // `{ websocket: true }` are declared, otherwise its onRoute hook isn't in
   // place yet and the route silently falls back to a plain HTTP handler.
