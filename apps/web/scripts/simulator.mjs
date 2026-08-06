@@ -1,6 +1,12 @@
-// ─── PulseOps 시뮬레이터 ──────────────────────────────────────────────────────
+// ─── PulseOps 시뮬레이터 (로컬 개발/디버깅 전용) ───────────────────────────────
 // apps/server REST API(POST /api/metrics, POST /api/logs)로 데이터를 전송한다.
 // 서버는 npm run dev:server (기본 http://localhost:3001)로 미리 기동되어 있어야 한다.
+//
+// 참고: 배포 환경(Render)에서는 이 스크립트를 돌릴 필요가 없다. apps/server가
+// DEMO_MODE=true일 때 동일한 로직(apps/server/src/demo/simulator.ts)을 내부에서
+// 직접 실행해 dataBuffer/DB에 써 넣기 때문에, 이 스크립트 없이도 배포된 사이트는
+// 항상 실시간 데이터가 흐른다. 이 파일은 로컬에서 HTTP 경로 자체를 디버깅하거나
+// 수동으로 트래픽을 흉내낼 때 계속 쓰면 된다.
 
 import dotenv from 'dotenv'
 import path from 'path'
