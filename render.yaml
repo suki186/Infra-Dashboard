@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: infra-dashboard-server
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install && npm run build:server
+    startCommand: npm run start --workspace=apps/server
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false

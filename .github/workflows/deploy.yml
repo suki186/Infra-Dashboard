@@ -1,0 +1,28 @@
+name: Deploy
+
+# Vercel/Render는 GitHub 연동만으로 push 시 자체 자동배포를 수행한다.
+# 이 워크플로우는 "Playwright E2E Tests가 통과한 커밋만 배포"하고 싶을 때 쓰는
+# 선택적(optional) 트리거다. 두 시크릿이 비어 있으면 각 스텝은 조용히 건너뛴다.
+#
+# 이 방식을 쓰려면 Render/Vercel 대시보드에서 해당 서비스의 "push 시 자동배포"를
+# 꺼두는 게 좋다. 켜둔 채로 이 워크플로우도 쓰면 배포가 두 번(즉시 자동배포 +
+# 테스트 통과 후 이 워크플로우) 트리거된다.
+
+on:
+  workflow_run:
+    workflows: ["Playwright E2E Tests"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Trigger Vercel deploy
+        if: ${{ secrets.VERCEL_DEPLOY_HOOK_URL != '' }}
+        run: curl -fsS -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}"
