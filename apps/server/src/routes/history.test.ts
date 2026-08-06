@@ -58,7 +58,7 @@ describe('GET /api/metrics/history', () => {
 
     expect(prisma.infrastructureMetric.findMany).toHaveBeenCalledWith({
       where: {},
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 20,
       skip: 0,
     });

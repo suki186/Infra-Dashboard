@@ -14,3 +14,5 @@ services:
         sync: false
       - key: ALLOWED_ORIGIN
         sync: false
+      - key: DATA_RETENTION_HOURS
+        value: "24"

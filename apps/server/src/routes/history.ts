@@ -57,7 +57,11 @@ export function registerHistoryRoutes(deps: HistoryRouteDeps): FastifyPluginAsyn
       const [rows, total] = await Promise.all([
         deps.prisma.infrastructureMetric.findMany({
           where,
-          orderBy: { createdAt: 'desc' },
+          // id를 tie-break로 추가: 같은 tick에 기록된 여러 서버의 row는 createdAt이
+          // 완전히 동일하므로, id 정렬이 없으면 페이지 경계에서 순서가 흔들려
+          // 프론트가 timestamp 기준으로 그룹핑할 때 같은 tick의 row가 서로 다른
+          // 페이지로 쪼개질 수 있다.
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           take: limit,
           skip: (page - 1) * limit,
         }),
