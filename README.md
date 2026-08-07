@@ -2,8 +2,12 @@
 
 실시간 인프라 모니터링 대시보드 — WebSocket으로 서버 메트릭/로그를 스트리밍하고, AI가 장애를 교차 진단한다.
 
-> **배포:** [suki-pulseops.vercel.app](https://suki-pulseops.vercel.app) <br>
-백엔드: `https://infra-dashboard-server.onrender.com` — Render 무료 플랜 특성상 첫 요청 시 콜드 스타트가 발생할 수 있음
+<img width="1695" height="1198" alt="image" src="https://github.com/user-attachments/assets/07b7534d-ad13-4da8-a4e4-4d5c74336287" />
+
+
+
+> **배포:** Render 무료 플랜 특성상 첫 로딩에 최대 1분 소요될 수 있음.  <br> [suki-pulseops.vercel.app](https://suki-pulseops.vercel.app)
+
 
 ---
 
@@ -62,15 +66,16 @@ apps/web (RealtimeSocketProvider → Zustand 스토어, 단일 커넥션)
 
 | 구분 | 기술 |
 |---|---|
-| 프론트엔드 | Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS v4, Chart.js 4 (imperative 코어 API), Zustand 5, TanStack Query 5 |
-| 백엔드 | Fastify 5, TypeScript 5, `@fastify/websocket`, `@fastify/cors`, Vitest |
-| DB | PostgreSQL (Supabase 관리형 호스팅), Prisma 6 |
-| AI | OpenAI GPT-4o-mini (메트릭+로그 교차 진단 챗봇) |
-| 테스트/CI | Playwright (E2E), GitHub Actions |
-| 인프라 | Vercel (프론트 배포), Render (백엔드 배포) |
+| 프론트엔드 | ![Next JS](https://img.shields.io/badge/Next.js-black?style=flat-square&logo=next.js&logoColor=white) ![React](https://img.shields.io/badge/React-61DAFB.svg?style=flat-square&logo=React&logoColor=white) ![TypeScript](https://img.shields.io/badge/Typescript-3178C6.svg?style=flat-square&logo=typescript&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-06B6D4?style=flat-square&logo=tailwind-css&logoColor=white) ![Chart JS](https://img.shields.io/badge/Chart.js-FF6384?style=flat-square&logo=chartdotjs&logoColor=white) ![React Query](https://img.shields.io/badge/-Tanstack%20Query-FF4154?style=flat-square&logo=react%20query&logoColor=white) ![Zustand](https://img.shields.io/badge/-Zustand-443E39?style=flat-square&logo=React&logoColor=white) |
+| 백엔드 | ![Fastify](https://img.shields.io/badge/-Fastify-000000?style=flat-square&logo=fastify&logoColor=white) ![TypeScript](https://img.shields.io/badge/Typescript-3178C6.svg?style=flat-square&logo=typescript&logoColor=white) ![Fastify](https://img.shields.io/badge/-@fastify/websocket-000000?style=flat-square) ![Fastify](https://img.shields.io/badge/-@fastify/cors-000000?style=flat-square) ![Vitest](https://img.shields.io/badge/-Vitest-00FF74?style=flat-square&logo=vitest&logoColor=white) |
+| DB | ![PostgreSQL](https://img.shields.io/badge/-PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) ![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=flat-square&logo=supabase&logoColor=white) ![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=Prisma&logoColor=white) |
+| AI(챗봇) | ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-black?style=flat-square&logo=openai&logoColor=white) |
+| 테스트/CI | ![Playwright](https://img.shields.io/badge/-Playwright-45ba4b?style=flat-square) ![Actions](https://img.shields.io/badge/-Github_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white) |
+| 인프라 | ![Vercel](https://img.shields.io/badge/-Vercel-000000?style=flat-square&logo=vercel&logoColor=white) ![Render](https://img.shields.io/badge/-Render-000000?style=flat-square&logo=render&logoColor=white) |
+| 개발 도구 | ![Claude](https://img.shields.io/badge/-Claude%20Code-D97757?style=flat-square&logo=claudecode&logoColor=white) |
 
 - 차트는 `chart.js` 코어를 `useRef` 캔버스에 직접 그리는 imperative 방식이다. React 상태를 거치지 않아야 300ms 페인트 루프에서 리렌더가 발생하지 않기 때문에 의도적으로 React 래퍼를 배제했다.
-- "Supabase 호스팅"은 PostgreSQL을 Supabase의 관리형 인프라에 올려두고 `apps/server`가 Prisma로 직접 접속한다는 뜻이다. 초기에는 `apps/web`이 Supabase Realtime을 직접 구독했지만, 자체 Fastify WebSocket 서버로 전환하며 그 경로는 걷어냈다.
+- PostgreSQL을 Supabase의 관리형 인프라에 올려두고 `apps/server`가 Prisma로 직접 접속한다. 초기에는 `apps/web`이 Supabase Realtime을 직접 구독했지만, 자체 Fastify WebSocket 서버로 전환하며 그 경로는 걷어냈다.
 
 ---
 
