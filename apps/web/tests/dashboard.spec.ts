@@ -208,3 +208,113 @@ test.describe('PulseOps 장애 시나리오 및 AI 진단', () => {
     ).toContainText('CPU 폭주가 감지되었습니다', { timeout: 10_000 })
   })
 })
+
+// ── TC-08. 다중 서버 실시간 데이터 혼합 검증 ─────────────────────────────────
+//
+// TC-05~07은 단일 서버(kr-seoul-web-01) 메트릭만 주입해 검증했다.
+// 실제 운영 환경에서는 3대(Seoul Web/DB, Jeju AI)의 메트릭이 뒤섞여 인입되므로,
+// deriveStats()(app/page.tsx)가 서버별 값을 서로 덮어쓰거나 합산 오류 없이
+// 정확히 분리 집계하는지를 검증한다.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('PulseOps 다중 서버 데이터 혼합 검증', () => {
+  function summaryCardValue(page: Page, title: string) {
+    // page.tsx summaryCards.map(): <p>{title}</p> 의 직계 부모가 카드 컨테이너이며,
+    // 그 안의 첫 번째 <span>이 value(색상 클래스가 붙은 큰 숫자/라벨)이다.
+    return page.getByText(title, { exact: true }).locator('..').locator('span').first()
+  }
+
+  test('TC-08: 3개 서버(Seoul Web/DB, Jeju AI)의 메트릭이 동시에 유입돼도 서버별 값이 섞이지 않고 요약 카드에 정확히 반영된다', async ({ page }) => {
+    const mock = await setupServerSocketMock(page)
+
+    await gotoAndWaitReady(page)
+
+    // kr-seoul-db-01만 CPU 95%(위험 임계치 이상)로 주입하고 나머지 두 서버는 정상 범위로 유지해,
+    // 알림·평균값 계산이 특정 서버 값으로 오염되지 않고 서버별로 정확히 분리 집계되는지 확인한다.
+    await expect(async () => {
+      const createdAt = new Date().toISOString()
+      mock.injectMetric({ serverId: 'kr-seoul-web-01', status: 'ONLINE', cpuUsage: 20, memoryUsage: 30, diskIo: 5, createdAt })
+      mock.injectMetric({ serverId: 'kr-seoul-db-01', status: 'ONLINE', cpuUsage: 95, memoryUsage: 60, diskIo: 40, createdAt })
+      mock.injectMetric({ serverId: 'kr-jeju-ai-01', status: 'ONLINE', cpuUsage: 50, memoryUsage: 45, diskIo: 20, createdAt })
+
+      // 배포된 서버 수: 3개 서버 모두 온라인으로 반영
+      await expect(summaryCardValue(page, '배포된 서버 수')).toHaveText('3', { timeout: 500 })
+    }).toPass({ intervals: [500], timeout: 10_000 })
+
+    // 평균 CPU: (20 + 95 + 50) / 3 = 55.0 — 단일 서버 값으로 치우치지 않고 3개 서버 평균이 정확히 계산됨
+    await expect(summaryCardValue(page, '평균 CPU')).toHaveText('55.0')
+
+    // 활성 알림: CPU 90% 이상인 kr-seoul-db-01 1건만 카운트 — 나머지 정상 서버(20%, 50%)는 알림에 섞여 들지 않음
+    await expect(
+      page.getByText('활성 알림').locator('strong')
+    ).toHaveText('1 건')
+
+    // 시스템 위험도: 3개 서버 중 하나(kr-seoul-db-01)라도 90% 이상이면 전체 위험도가 '위험'으로 반영됨
+    await expect(page.locator('span.text-red-400').filter({ hasText: '위험' })).toBeVisible()
+
+    // 차트: 다중 서버 데이터 수신 후 메인 차트 캔버스의 'invisible' 클래스가 걷히고 렌더링 상태로 전환됨
+    // (SERVER_STYLES에 등록된 3개 서버 모두 useRealtimeStore.ingest() 대상이므로 차트에도 반영된다.
+    //  RealtimeChart.tsx: 페인트 타이머가 데이터 수신 시 canvasRef의 'invisible' 클래스를 제거한다.
+    //  Y축 캔버스는 애초에 'invisible' 클래스를 갖지 않으므로 이 선택자는 메인 캔버스만 가리킨다.)
+    await expect(page.locator('canvas.invisible')).toHaveCount(0)
+  })
+})
+
+// ── TC-09~10. 에러/예외 상황 검증 ────────────────────────────────────────────
+test.describe('PulseOps 에러/예외 상황 검증', () => {
+  // TC-09: WebSocket 연결 종료 시 재연결 시도 검증 ──────────────────────────
+  // useRealtimeStore.ts openSocket(): socket의 'close' 이벤트 발생 시
+  // setTimeout(connect, RECONNECT_DELAY_MS=2000)으로 재연결을 예약한다.
+  // 서버측에서 연결을 끊어 클라이언트 'close' 이벤트를 유도한 뒤,
+  // 새 WebSocket 연결 시도(=routeWebSocket 핸들러 재호출)가 실제로 발생하는지 검증한다.
+  test('TC-09: WebSocket 연결이 서버측에서 끊기면 프론트가 약 2초 후 자동으로 재연결을 시도한다', async ({ page }) => {
+    let connectionCount = 0
+    const sockets: Parameters<Parameters<Page['routeWebSocket']>[1]>[0][] = []
+
+    await mockMetricsHistory(page)
+    await page.routeWebSocket(/localhost:3001\/ws/, ws => {
+      connectionCount++
+      sockets.push(ws)
+    })
+
+    await page.goto('/')
+    await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
+
+    // 최초 연결(RealtimeSocketProvider → connectSocket())이 열릴 때까지 대기
+    await expect.poll(() => connectionCount, { timeout: 10_000 }).toBe(1)
+
+    // 서버측에서 연결을 끊는다 — 기본 forwarding 동작에 의해 페이지 측 WebSocket도 'close' 이벤트를 받는다
+    await sockets[0].close()
+
+    // RECONNECT_DELAY_MS(2000ms) 경과 후 재연결이 시도돼 connectionCount가 2로 증가하는지 확인
+    await expect.poll(() => connectionCount, { timeout: 8_000 }).toBe(2)
+  })
+
+  // TC-10: 잘못된(500) 히스토리 API 응답 시 프론트 크래시 방지 검증 ─────────
+  // useMetricsHistory(useInfiniteQuery)는 GET /api/metrics/history가 실패해도
+  // isError 상태로만 전환될 뿐 예외를 던지지 않아야 한다.
+  // 대시보드 핵심 UI(요약 카드 등)가 정상적으로 렌더링되고, 처리되지 않은
+  // JS 예외(pageerror)가 발생하지 않는지 검증한다.
+  test('TC-10: 히스토리 API가 500 오류를 반환해도 대시보드가 크래시하지 않고 정상적으로 렌더링된다', async ({ page }) => {
+    const pageErrors: Error[] = []
+    page.on('pageerror', (err) => pageErrors.push(err))
+
+    await page.route(/localhost:3001\/api\/metrics\/history/, route =>
+      route.fulfill({
+        status:      500,
+        contentType: 'application/json',
+        body:        JSON.stringify({ error: 'internal server error' }),
+      }),
+    )
+
+    const historyResponse = page.waitForResponse(/localhost:3001\/api\/metrics\/history/)
+    await page.goto('/')
+    await historyResponse
+
+    // 히스토리 API 실패와 무관하게 대시보드 핵심 영역은 정상적으로 노출된다
+    await expect(page.getByText('배포된 서버 수')).toBeVisible()
+    await expect(page.getByRole('heading', { name: /실시간 인프라 메트릭/ })).toBeVisible()
+
+    // 처리되지 않은 예외로 페이지가 죽지 않았는지 확인
+    expect(pageErrors).toHaveLength(0)
+  })
+})
