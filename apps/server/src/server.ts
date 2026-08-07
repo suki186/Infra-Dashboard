@@ -10,6 +10,7 @@ import { registerMetricsRoutes } from './routes/metrics';
 import { registerLogsRoutes } from './routes/logs';
 import { registerHistoryRoutes } from './routes/history';
 import { createDemoSimulator } from './demo/simulator';
+import { createRetentionScheduler } from './demo/retention';
 
 const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -40,9 +41,19 @@ const demoSimulator = DEMO_MODE
     })
   : undefined;
 
+// DEMO_MODE는 데이터를 계속 쌓기만 하므로, 같은 조건에서 오래된 row를 주기적으로
+// 정리해 DB 용량이 무한정 늘어나지 않게 한다 (기본: 24시간 초과분을 10분마다 삭제).
+const retentionScheduler = DEMO_MODE
+  ? createRetentionScheduler({
+      prisma,
+      onError: (err) => app.log.error(err, '[retention] failed to prune old data'),
+    })
+  : undefined;
+
 app.addHook('onClose', async () => {
   broadcaster.stop();
   demoSimulator?.stop();
+  retentionScheduler?.stop();
 });
 
 app.get('/health', async () => {
@@ -91,6 +102,11 @@ async function main(): Promise<void> {
   if (demoSimulator) {
     demoSimulator.start();
     app.log.info('[demo] DEMO_MODE=true — 내장 데모 데이터 생성기 시작');
+  }
+
+  if (retentionScheduler) {
+    retentionScheduler.start();
+    app.log.info('[retention] DEMO_MODE=true — 데이터 정리 스케줄러 시작');
   }
 }
 

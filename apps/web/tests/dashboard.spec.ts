@@ -49,11 +49,28 @@ async function setupServerSocketMock(page: Page) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── apps/server REST(/api/metrics/history) Mock ─────────────────────────────
+//
+// useMetricsHistory 훅은 apps/server를 직접 호출한다 (NEXT_PUBLIC_API_URL 미설정 시
+// http://localhost:3001로 기본 폴백). CI/로컬 테스트에서는 apps/server가 떠 있지
+// 않으므로, 실제 네트워크 요청 대신 빈 페이지(과거 데이터 없음)로 응답해
+// 무한 스크롤 로직이 조용히 "더 이상 없음" 상태로 안정되게 한다.
+async function mockMetricsHistory(page: Page) {
+  await page.route(/localhost:3001\/api\/metrics\/history/, route =>
+    route.fulfill({
+      status:      200,
+      contentType: 'application/json',
+      body:        JSON.stringify({ data: [], page: 1, limit: 150, total: 0 }),
+    }),
+  )
+}
+
 // ── 공통 헬퍼 ────────────────────────────────────────────────────────────────
 // WebSocket 기반 실시간 앱은 네트워크가 항상 활성이므로 'networkidle'은 영원히 성립하지 않음.
 // 대신 페이지가 실제로 사용 가능한 시점을 나타내는 고정 UI 요소(요약 카드)의 가시성으로 판단한다.
 // page.tsx — 요약 카드는 WebSocket 연결 여부와 무관하게 항상 렌더링된다
 async function gotoAndWaitReady(page: Page) {
+  await mockMetricsHistory(page)
   await page.goto('/')
   await page.getByText('배포된 서버 수').waitFor({ state: 'visible' })
 }
