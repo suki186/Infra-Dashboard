@@ -9,6 +9,7 @@ import { startBroadcaster } from './ws/broadcaster';
 import { registerMetricsRoutes } from './routes/metrics';
 import { registerLogsRoutes } from './routes/logs';
 import { registerHistoryRoutes } from './routes/history';
+import { registerHealthRoutes } from './routes/health';
 import { createDemoSimulator } from './demo/simulator';
 import { createRetentionScheduler } from './demo/retention';
 
@@ -56,21 +57,6 @@ app.addHook('onClose', async () => {
   retentionScheduler?.stop();
 });
 
-app.get('/health', async () => {
-  return { status: 'ok' };
-});
-
-app.get('/health/db', async (request, reply) => {
-  try {
-    const count = await prisma.infrastructureMetric.count();
-    return { status: 'ok', infrastructureMetricsCount: count };
-  } catch (err) {
-    request.log.error(err);
-    reply.code(500);
-    return { status: 'error', message: (err as Error).message };
-  }
-});
-
 app.get('/health/shared-types', async () => {
   const sample: ServerMetric = {
     serverId: 'kr-seoul-web-01',
@@ -95,6 +81,7 @@ async function main(): Promise<void> {
   await app.register(registerMetricsRoutes({ dataBuffer, prisma }));
   await app.register(registerLogsRoutes({ dataBuffer, prisma }));
   await app.register(registerHistoryRoutes({ prisma }));
+  await app.register(registerHealthRoutes({ prisma }));
 
   await app.listen({ port: PORT, host: HOST });
   app.log.info(`Server listening on http://${HOST}:${PORT}`);
