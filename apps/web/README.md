@@ -1,202 +1,178 @@
-# Infra Dashboard
+# apps/web
 
-> **실시간 인프라 관제 + AI 자동 진단** — 60fps 차트 렌더링을 유지하면서 Supabase Realtime으로 로그·메트릭을 스트리밍하고, GPT-4o-mini가 메트릭 + 로그를 교차 분석하여 장애를 즉시 진단합니다.
+Next.js 기반 실시간 인프라 관제 대시보드 프론트엔드. [apps/server](../server)의 WebSocket(`/ws`)을 단일 연결로 구독해 메트릭·로그를 스트리밍 렌더링하고, GPT-4o-mini가 메트릭+로그를 교차 분석해 장애를 진단한다.
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript 5 · Chart.js 4 · Supabase (Postgres Realtime) · OpenAI GPT-4o-mini · Tailwind CSS v4
-
----
-
-## 시연 영상
-https://github.com/user-attachments/assets/845e2626-ea2b-45c1-b1cc-19610074b9bc
+백엔드는 [apps/server](../server), 두 워크스페이스가 공유하는 타입은 [packages/shared](../../packages/shared) 참고.
 
 ---
 
-## 핵심 기능
+## 기술 스택
 
-- **60fps 실시간 차트** — `useRef` 공유 버퍼 + 제로 할당(zero-allocation) 배열 재사용으로 GC 압박 없이 300ms 독립 드로우 루프 구동
-- **로그 터미널 스트리밍** — `forwardRef` + `useImperativeHandle` 격리로 초당 수십 건의 INSERT 이벤트가 와도 상위 트리 re-render **0회**
-- **AI 교차 진단** — 질문 시점 메트릭 스냅샷 + 최근 로그 10줄을 GPT-4o-mini에 함께 주입, 서버 ID·타임스탬프를 인용한 근거 기반 장애 진단
-
----
-
-## 기획 의도 & Why Supabase
-
-이 프로젝트의 핵심 과제는 **"초당 여러 서버에서 쏟아지는 이벤트를 받아 차트를 60fps로 유지하면서, 동시에 로그 스트리밍과 AI 진단을 붙이는 것"** 이었습니다.
-
-리소스를 인프라 운영 로직 자체에 집중하기 위해 **Supabase**를 BaaS로 선택했습니다.
-
-| 요구사항 | Supabase로 충족한 방식 |
+| 분류 | 기술 |
 |---|---|
-| 실시간 이벤트 수신 | `postgres_changes` — Postgres INSERT 이벤트를 WebSocket 없이 구독 |
-| 서버 관리 제로 | 별도 WebSocket 서버·브로커 없이 DB 자체가 이벤트 소스 |
-| 강타입 보장 | Postgres 스키마 → `LogEntry` / `ServerMetric` 타입으로 직결 |
-| 시뮬레이터 연동 | `scripts/simulator.mjs`가 직접 Supabase에 INSERT → 실환경과 동일한 경로 |
-
-덕분에 WebSocket 서버·브로커를 직접 운영하지 않고도 실제 장애 시나리오(CPU 급등 → ERROR 로그 → AI 진단)를 구현할 수 있었습니다.
+| 프레임워크 | Next.js 16 (App Router) |
+| UI | React 19, TypeScript 5, Tailwind CSS v4 |
+| 실시간 상태 | Zustand 5 (`useRealtimeStore` — WebSocket 단일 연결 소유) |
+| 과거 데이터 조회 | TanStack Query 5 (`useInfiniteQuery` 커서 기반 무한 스크롤) |
+| 차트 렌더링 | Chart.js 4 코어 (imperative API, `useRef` 캔버스에 직접 드로우) |
+| AI | OpenAI GPT-4o-mini (`app/api/chat/route.ts`에서 서버 사이드 호출) |
+| 테스트 | Playwright (`@playwright/test`) |
 
 ---
 
-## 핵심 아키텍처 Before vs After
+## 주요 기능
 
-### re-render 격리
-
-| | Before | After |
+| 기능 | 구현 위치 | 설명 |
 |---|---|---|
-| 상태 저장 | `useState<TimeSlot[]>` | `useRef<TimeSlot[]>` (sharedBufferRef) |
-| 이벤트 수신 | 이벤트마다 setState → 전체 트리 re-render | 큐 push → 300ms 플러시 → 차트 imperative update |
-| 로그 도착 시 | 부모 트리 포함 전체 re-render | `LogTerminal` 서브트리만 tick++ |
-| GC 압박 | 매 프레임 새 배열 생성 | `array.length = N` 재사용, 제로 할당 |
+| 실시간 요약 카드 | `app/page.tsx` | 배포 서버 수·평균 CPU·시스템 위험도를 `useRealtimeStore`에서 파생 계산 |
+| 60fps 실시간 차트 | `src/components/dashboard/RealtimeChart.tsx` + `useChartPaint` | `chart.update('none')` + 300ms 독립 페인트 루프, Y축 LERP 동적 스케일링, 서버별 필터 토글 |
+| 로그 터미널 스트리밍 | `src/components/dashboard/LogTerminal.tsx` | `forwardRef` + `useImperativeHandle`로 격리, 로그 도착 시 상위 트리 재렌더 없이 서브트리만 갱신 |
+| AI 챗봇 (교차 진단) | `src/components/chatbot/PulseDoctor.tsx` + `usePulseDoctor.ts` | 질문 시점 메트릭 스냅샷 + 최근 로그 10줄을 GPT-4o-mini에 함께 주입, 서버 ID·타임스탬프 근거 기반 진단 |
+| 무한 스크롤 히스토리 | `src/hooks/useMetricsHistory.ts` | 차트를 왼쪽으로 스크롤하면 `/api/metrics/history`를 커서 기반으로 추가 조회, 실시간 슬롯과 `Map` 기반 dedup 병합 |
 
-### 서비스 레이어 분리
+---
 
-```
-Before: usePulseDoctor.ts 에 fetch 인라인
-After:  src/services/aiApi.ts → sendChatQuestionApi()
-        app/api/chat/route.ts → OPENAI_API_KEY 서버 사이드 격리
-```
-
-### AI 컨텍스트 교차 주입
+## 폴더 구조
 
 ```
-Before: 메트릭 스냅샷만 전달
-After:  메트릭 스냅샷 + getRecentLogs(10) 로그 10줄 동시 주입
-        (ref 읽기 — 전송 시점에 re-render 비용 없음)
+app/
+├── api/chat/route.ts        AI 챗봇 API 라우트 — OPENAI_API_KEY 서버 사이드 격리
+├── page.tsx                 대시보드 메인 (Client Component) — 요약 카드 + 차트 + 로그 + 챗봇 조립
+└── layout.tsx                RootLayout — QueryProvider/RealtimeSocketProvider/Sidebar 최상위 마운트
+
+src/
+├── components/
+│   ├── chatbot/
+│   │   ├── PulseDoctor.tsx      AI 챗봇 UI
+│   │   └── usePulseDoctor.ts    챗봇 상태/비즈니스 로직 훅
+│   ├── common/
+│   │   ├── QueryProvider.tsx           TanStack Query QueryClient 지연 초기화 (useState)
+│   │   ├── RealtimeSocketProvider.tsx  UI 없는 컴포넌트 — 앱 최상위에서 WebSocket 연결을 1회만 초기화
+│   │   └── Sidebar.tsx
+│   └── dashboard/
+│       ├── RealtimeChart.tsx        선언형 UI만 — useChartPaint 훅 호출 한 줄로 로직 위임
+│       ├── RealtimeChart.utils.ts   렌더링 의존성 0인 순수 함수 (LERP 상수, floorTo5/ceilTo5, computeCombined)
+│       ├── RealtimeChart.config.ts  Chart.js 옵션/초기 데이터셋
+│       └── LogTerminal.tsx
+├── hooks/
+│   ├── useChartPaint.ts       차트의 모든 사이드 이펙트 전담 (페인트 타이머, IntersectionObserver, Y축 LERP, 서버 필터)
+│   └── useMetricsHistory.ts   useInfiniteQuery로 /api/metrics/history 커서 페이징
+├── store/
+│   └── useRealtimeStore.ts    Zustand — WebSocket 단일 연결 소유 + 실시간 슬롯/메트릭/로그 상태
+├── services/
+│   └── aiApi.ts               sendChatQuestionApi() — /api/chat 호출 분리
+├── config/
+│   └── infrastructure.ts      서버 목록, 색상, ServerMetric/MetricsMap 타입 등 단일 진실 공급원
+├── types/
+│   ├── chat.ts
+│   ├── metrics.ts
+│   └── terminal.ts
+└── utils/
+    └── infrastructureHelpers.ts   deriveStats 등 요약 카드 파생 로직
+
+scripts/
+└── simulator.mjs             가상 메트릭/로그 생성기 — apps/server REST(POST /api/metrics, /api/logs)로 전송
+
+tests/
+└── dashboard.spec.ts         Playwright E2E (TC-01~10)
+
+docs/
+└── SESSION*_WORK_LOG.md      세션별 작업 로그
 ```
 
 ---
 
-## 임팩트 트러블슈팅
+## 환경 변수
 
-<details>
-<summary>① React 19 auto-batching — 다중 서버 메트릭 데이터 유실</summary>
+`.env.example` 기준.
 
-**현상**
-3대 서버가 거의 동시에 메트릭 이벤트를 보내면 React 19의 자동 배칭이 `setState` 호출을 묶어 마지막 1개만 반영 → 나머지 서버 데이터 유실, 차트에 서버 1~2대 라인이 간헐적으로 사라짐.
-
-**원인**
-```ts
-// ❌ Before — 이벤트마다 setState, 배칭으로 앞 이벤트 덮임
-const [slots, setSlots] = useState<TimeSlot[]>([])
-supabase.on('INSERT', ({ new: row }) => {
-  setSlots(prev => [...prev, row])  // 3회 호출 → 1회만 반영
-})
-```
-
-**해결**
-```ts
-// ✅ After — useRef 큐에 전부 누적, 300ms 플러시 타이머가 한 번에 처리
-const queueRef        = useRef<ServerMetric[]>([])
-const sharedBufferRef = useRef<TimeSlot[]>([])
-
-// 이벤트 핸들러: React 렌더러와 완전히 무관
-const addDataToBuffer = useCallback((data: ServerMetric) => {
-  queueRef.current.push(data)
-}, [])
-
-// 300ms 독립 타이머: 큐 전체를 한 번에 병합 후 chart.update('none')
-setInterval(() => {
-  const pending = queueRef.current.splice(0)
-  // ... 타임슬롯 병합 후 sharedBufferRef 직접 변경
-}, 300)
-```
-
-세 서버의 이벤트가 동시에 와도 큐에 모두 쌓이고, 300ms 타이머가 일괄 처리하여 데이터 유실 0건.
-
-</details>
-
-<details>
-<summary>② 15,228ms Long Task — Chart.js 재생성으로 브라우저 멈춤</summary>
-
-**현상**
-시뮬레이터 기동 후 약 15초 간격으로 브라우저가 완전히 멈춤. Chrome DevTools Performance 탭에서 **15,228ms짜리 Long Task** 적발.
-
-**원인**
-```ts
-// ❌ Before — 매 데이터 수신마다 useState 갱신
-const [chartData, setChartData] = useState(...)
-
-useEffect(() => {
-  setChartData(newData)  // → re-render → canvas unmount → Chart 인스턴스 파괴 → new ChartJS() 재생성
-}, [data])
-```
-Chart.js는 캔버스 생성 시 WebGL 컨텍스트와 수천 개의 DOM 측정을 수행 — 반복 생성이 메인 스레드를 장기 점유.
-
-**해결**
-```ts
-// ✅ After — Chart 인스턴스를 ref로 1회 생성, imperative API로 데이터만 교체
-const chartRef = useRef<ChartJS | null>(null)
-
-// 마운트 시 1회만 생성
-useEffect(() => {
-  chartRef.current = new ChartJS(canvas, config)
-  return () => chartRef.current?.destroy()
-}, [])
-
-// 300ms 드로우 루프: 새 배열 생성 없이 기존 배열 재사용 (zero-allocation)
-const labels = chart.data.labels as string[]
-labels.length = N          // GC 압박 없이 배열 초기화
-labels.push(...newLabels)  // 재사용
-chart.update('none')       // 애니메이션 스킵, 즉시 렌더
-```
-
-Long Task **15,228ms → 0ms**, 차트 업데이트 평균 **< 1ms**.
-
-</details>
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `NEXT_PUBLIC_WS_URL` | `ws://localhost:3001/ws` | `apps/server`의 WebSocket 엔드포인트. 로컬 개발 시 미설정해도 기본값이 로컬 서버를 가리킨다 |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | `apps/server`의 REST 엔드포인트 (히스토리 조회용). 마찬가지로 로컬 개발 시 기본값 그대로 사용 가능 |
+| `OPENAI_API_KEY` | — | AI 챗봇(`app/api/chat/route.ts`)에서 사용. 없어도 대시보드는 정상 동작 |
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | — | **레거시.** Supabase Realtime을 직접 구독하던 초기 구조의 흔적 |
 
 ---
 
-## 디렉토리 구조
+## 로컬 실행
 
-```
-infra-dashboard/
-├── app/
-│   ├── api/chat/route.ts          # Route Handler — OPENAI_API_KEY 서버 사이드 격리
-│   ├── page.tsx                   # 메인 대시보드 (Client Component)
-│   ├── layout.tsx
-│   └── globals.css                # .pd-msg 스코프 CSS (챗봇 <details> 스타일링)
-├── src/
-│   ├── components/
-│   │   ├── chatbot/
-│   │   │   ├── PulseDoctor.tsx    # AI 챗봇 — 순수 UI
-│   │   │   └── usePulseDoctor.ts  # 챗봇 비즈니스 로직 훅
-│   │   └── dashboard/
-│   │       ├── RealtimeChart.tsx  # 60fps 차트 (Chart.js imperative)
-│   │       ├── RealtimeChart.config.ts
-│   │       └── LogTerminal.tsx    # 실시간 로그 터미널 (forwardRef 격리)
-│   ├── hooks/
-│   │   └── useMetricsBuffer.ts    # useRef 큐 + 300ms 플러시 버퍼
-│   ├── services/
-│   │   └── aiApi.ts               # AI API I/O 분리 (sendChatQuestionApi)
-│   ├── types/
-│   │   ├── chat.ts                # Message, UsePulseDoctorReturn
-│   │   ├── metrics.ts             # TimeSlot, MetricsBuffer
-│   │   └── terminal.ts            # LogTerminalHandle, LogEntry, LogLevel
-│   ├── config/
-│   │   └── infrastructure.ts      # 서버 목록, ServerMetric, MetricsMap
-│   └── utils/
-│       ├── supabase.ts            # Supabase 클라이언트 싱글턴
-│       └── infrastructureHelpers.ts
-└── scripts/
-    └── simulator.mjs              # 메트릭 + 로그 동시 시뮬레이션
-```
-
----
-
-## 로컬 구동
+루트에서 `npm install`을 마쳤다는 전제로:
 
 ```bash
-# 1. 의존성 설치
-npm install
-
-# 2. 환경 변수 설정
-cp .env.local.example .env.local
-# NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, OPENAI_API_KEY 입력
-
-# 3. 시뮬레이터 기동 (별도 터미널)
-npm run simulate
-
-# 4. 개발 서버 기동
-npm run dev
+cp apps/web/.env.example apps/web/.env
+npm run dev:web   # http://localhost:3000
 ```
 
-`npm run simulate`를 먼저 실행하면 Supabase에 3대 서버의 메트릭과 로그가 실시간으로 INSERT되고, 브라우저에서 차트·터미널·AI 진단이 즉시 활성화됩니다.
+`NEXT_PUBLIC_WS_URL`/`NEXT_PUBLIC_API_URL`을 어디로 향하게 하느냐에 따라 두 가지 방식으로 백엔드를 붙일 수 있다.
+
+- **로컬 백엔드** (기본값): `apps/server`를 직접 기동한다. `.env`를 비워두면 자동으로 `localhost:3001`을 바라본다.
+  ```bash
+  npm run dev:server   # 별도 터미널
+  ```
+- **배포된 Render 백엔드**: 로컬에서 서버를 띄우지 않고 배포 환경에 붙여보고 싶을 때 `.env`를 덮어쓴다.
+  ```bash
+  NEXT_PUBLIC_WS_URL=wss://infra-dashboard-server.onrender.com/ws
+  NEXT_PUBLIC_API_URL=https://infra-dashboard-server.onrender.com
+  ```
+  Render 무료 플랜은 콜드 스타트가 있어 첫 요청이 느릴 수 있다.
+
+둘 중 어느 쪽이든, 대시보드에 데이터가 흐르려면 백엔드에 메트릭/로그가 계속 들어와야 한다 — 로컬 서버라면 `npm run simulate --workspace=apps/web`(또는 서버의 `DEMO_MODE=true`), Render 백엔드라면 이미 `DEMO_MODE`로 자체 데이터를 생성 중이므로 별도 조치가 필요 없다.
+
+---
+
+## 상태관리 설계 — Zustand vs TanStack Query
+
+실시간 메트릭/로그는 서버가 초당 여러 번 **밀어주는(push)** 데이터라 React의 렌더 사이클과 무관하게 최대한 빨리 받아 쌓아야 하고, 컴포넌트 리렌더를 유발하면 안 된다 — 그래서 `useRealtimeStore`(Zustand)가 WebSocket 연결 자체를 소유하고, 컴포넌트는 `useRealtimeStore.subscribe()`로 구독해 `ref`에 최신값만 미러링한다. <br>
+반면 과거 히스토리는 사용자가 스크롤할 때만 **요청해서 가져오는(pull)** 데이터라 캐싱·재시도·커서 페이지네이션 같은 요청/응답 생명주기 관리가 필요하고, 이 부분은 TanStack Query의 `useInfiniteQuery`가 정확히 그 문제를 위해 설계된 도구다.
+
+---
+
+## 테스트
+
+```bash
+npm run test:e2e       # Playwright — 헤드리스 실행
+npm run test:e2e:ui    # Playwright UI 모드
+```
+
+WebSocket은 `page.routeWebSocket()`으로 모킹하고, `/api/chat`은 `page.route()`로 모킹해 CI 환경에서 실제 백엔드·OpenAI 없이 완전 격리된 상태로 검증한다.
+
+| TC | 검증 내용 |
+|---|---|
+| TC-01 | 브라우저 탭 타이틀에 "PulseOps"가 포함된다 |
+| TC-02 | 실시간 인프라 메트릭 관제 영역이 화면에 노출된다 |
+| TC-03 | AI 챗봇 질문 입력창이 화면에 노출된다 |
+| TC-04 | 시스템 로그 터미널이 화면에 노출된다 |
+| TC-05 | CPU 99% 메트릭 WebSocket 주입 후 위험도 카드가 `text-red-400` 상태로 변이된다 |
+| TC-06 | 로그 WebSocket 주입 후 터미널에 CRITICAL ERROR 패킷이 실시간 인입된다 |
+| TC-07 | 메트릭 주입으로 챗봇 활성화 후 AI 분석 답변이 비동기로 렌더링된다 |
+| TC-08 | 3개 서버(Seoul Web/DB, Jeju AI)의 메트릭이 동시에 유입돼도 서버별 값이 섞이지 않고 요약 카드에 정확히 반영된다 |
+| TC-09 | WebSocket 연결이 서버측에서 끊기면 프론트가 약 2초 후 자동으로 재연결을 시도한다 |
+| TC-10 | 히스토리 API가 500 오류를 반환해도 대시보드가 크래시하지 않고 정상적으로 렌더링된다 |
+
+GitHub Actions(`playwright.yml`)가 `main` push/PR마다 이 스위트를 자동 실행한다.
+
+---
+
+## 배포
+
+Vercel — GitHub 연동으로 `main` push 시 자동 배포된다. [suki-pulseops.vercel.app](https://suki-pulseops.vercel.app)
+
+빌드 시 `NEXT_PUBLIC_WS_URL`/`NEXT_PUBLIC_API_URL`을 Render 백엔드 주소로, `OPENAI_API_KEY`를 Vercel 프로젝트 환경 변수로 설정해야 한다.
+
+---
+
+## 세션 작업 로그 / 상세 트러블슈팅
+
+설계 배경과 트러블슈팅 전체 기록은 [docs/](./docs/)에 세션 단위로 남아 있다.
+
+| 세션 | 내용 |
+|---|---|
+| [Session 1](./docs/SESSION1_WORK_LOG.md) | 프로젝트 초기화, 시뮬레이터 구축, 초기 렌더링 병목 진단 |
+| [Session 2](./docs/SESSION2_WORK_LOG.md) | re-render 격리, `useRef` 공유 버퍼 도입 |
+| [Session 3](./docs/SESSION3_WORK_LOG.md) | AI 챗봇 서비스 레이어 분리 |
+| [Session 4](./docs/SESSION4_WORK_LOG.md) | Playwright E2E 인프라 구축 + CI/CD 파이프라인 (TC-01~07) |
+| [Session 5](./docs/SESSION5_WORK_LOG.md) | 차트 시계열 역방향 무한 스크롤 + 실시간 데이터 정밀 병합 아키텍처 |
+| [Session 6](./docs/SESSION6_WORK_LOG.md) | 다중 서버 필터링, Y축 LERP 동적 스케일링, 관심사 분리 리팩토링 |
+| [Session 7](./docs/SESSION7_WORK_LOG.md) | Supabase Realtime → apps/server WebSocket/REST 전환 (10초 집계 슬롯 버그) |
+| [Session 8](./docs/SESSION8_WORK_LOG.md) | WebSocket 단일 연결 통합 (3중 브로드캐스트 트러블슈팅) |
